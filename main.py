@@ -6,7 +6,7 @@ from subprocess import run
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 
 API_TOKEN = os.environ.get("API_TOKEN")
 bot = Bot(token=API_TOKEN)
@@ -51,7 +51,7 @@ async def handle_text(message: types.Message):
         # Generate preview with default color/font
         tgs_file = generate_tgs(text, color="#FFFFFF", font="Arial")
         await message.answer_document(
-            types.InputFile(path=tgs_file),
+            FSInputFile(tgs_file),
             caption="Preview of your emoji text"
         )
 
@@ -83,7 +83,7 @@ async def choose_color(callback: types.CallbackQuery):
         font="Arial"
     )
     await callback.message.answer_document(
-        types.InputFile(path=tgs_file),
+        FSInputFile(tgs_file),
         caption="Preview with chosen color"
     )
 
@@ -116,7 +116,7 @@ async def choose_font(callback: types.CallbackQuery):
         font=font
     )
     await callback.message.answer_document(
-        types.InputFile(path=tgs_file),
+        FSInputFile(tgs_file),
         caption="Here is your final emoji .tgs!"
     )
     await callback.answer()
