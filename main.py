@@ -12,12 +12,12 @@ API_TOKEN = os.environ.get("API_TOKEN")
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Load template JSON
+# Load template JSON (base structure untuk lottie)
 with open("template.json", "r") as f:
     template_json = json.load(f)
 
-# Load shapes library
-with open("shapes_library.json", "r") as f:
+# Load shapes library (A-Z)
+with open("shapes_library.json", "r", encoding="utf-8") as f:
     shapes_library = json.load(f)
 
 # Temporary state per user
@@ -38,7 +38,7 @@ async def cmd_start(message: types.Message):
 async def start_emoji(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     user_states[user_id] = {"step": "await_text", "data": {}}
-    await callback.message.answer("Send me the text you want to convert into an emoji.")
+    await callback.message.answer("Send me the text (A–Z) you want to convert into an emoji.")
     await callback.answer()
 
 # --- Step 3: Receive text from user ---
@@ -48,7 +48,7 @@ async def handle_text(message: types.Message):
     state = user_states[user_id]
 
     if state["step"] == "await_text":
-        text = message.text.upper()
+        text = message.text.upper()  # otomatis ke kapital
         state["data"]["text"] = text
         state["step"] = "choose_color"
 
@@ -129,35 +129,32 @@ async def choose_font(callback: types.CallbackQuery):
 def generate_tgs(text, color="#FFFFFF", font="Arial"):
     data = copy.deepcopy(template_json)
 
-    # Remove existing text layers
-    data["layers"] = [layer for layer in data.get("layers", []) if layer.get("ty") != 5]
+    # Clear existing layers
+    data["layers"] = []
 
-    # Add shapes for each letter
     x_offset = 0
-    letter_spacing = 60  # adjust spacing between letters
     for char in text:
-        if char in shapes_library:
-            for layer_shape in shapes_library[char]:
-                layer = copy.deepcopy(layer_shape)
-                # Apply color
-                if "shapes" in layer:
-                    for shape in layer["shapes"]:
-                        if "ks" in shape and "k" in shape["ks"]:
-                            for k in shape["ks"]["k"]:
-                                if "i" in k:  # sanity check
-                                    k["fillColor"] = hex_to_rgb(color)  # custom field for convert script
-                # Apply horizontal offset
-                if "shapes" in layer:
-                    for shape in layer["shapes"]:
-                        if "ks" in shape and "k" in shape["ks"]:
-                            for k in shape["ks"]["k"]:
-                                if "v" in k:
-                                    k["v"] = [[x + x_offset, y] for x, y in k["v"]]
-                data["layers"].append(layer)
-            x_offset += letter_spacing
+        if char == " ":
+            x_offset += 40  # jarak untuk spasi
+            continue
+        if char not in shapes_library:
+            continue  # skip jika karakter tidak ada
+        shapes = shapes_library[char]
+
+        # Tambahkan tiap shape huruf ke layer
+        for shape in shapes:
+            layer = copy.deepcopy(shape)
+            # Offset posisi huruf agar tidak bertumpuk
+            for path in layer.get("shapes", []):
+                for k in path["ks"]["k"]:
+                    for v in k["v"]:
+                        v[0] += x_offset
+            data["layers"].append(layer)
+
+        x_offset += 60  # jarak antar huruf
 
     tmp_json = f"tmp_{text}.json"
-    with open(tmp_json, "w") as f:
+    with open(tmp_json, "w", encoding="utf-8") as f:
         json.dump(data, f)
 
     tgs_file = f"{text}.tgs"
