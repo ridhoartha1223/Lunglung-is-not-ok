@@ -5,7 +5,8 @@ import os
 from subprocess import run
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command, Text
+from aiogram.filters import Command
+from aiogram.filters.text import Text
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 API_TOKEN = os.environ.get("API_TOKEN")
@@ -127,3 +128,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
