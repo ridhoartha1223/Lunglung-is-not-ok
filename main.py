@@ -7,15 +7,18 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 TOKEN = os.getenv("BOT_TOKEN")
 
 # -------------------- UTILITIES --------------------
-def generate_json(text: str, font_color=(0,0,0), font_name="NotoColorEmoji", size=512, animation_type="fade_in") -> BytesIO:
-    r,g,b = font_color
+def generate_json(text: str, font_color=(0,0,0), font_name="assets/fonts/NotoColorEmoji.ttf", size=512, animation_type="fade_in") -> BytesIO:
+    # konversi warna 0-255 ke 0-1
+    r,g,b = [c/255 for c in font_color]
+
+    # keyframe opacity untuk animasi
     o_anim = [{"t":0,"s":[0],"e":[100],"i":{"x":[0.667],"y":[1]},"o":{"x":[0.333],"y":[0]}},{"t":30}] if animation_type=="fade_in" else 100
     s_anim = [{"t":0,"s":[0,0,100],"e":[100,100,100],"i":{"x":[0.667]*3,"y":[1]*3},"o":{"x":[0.333]*3,"y":[0]*3}}] if animation_type=="scale" else [100,100,100]
 
     layer = {
         "ddd":0,
         "ind":1,
-        "ty":5,
+        "ty":5,  # text layer
         "nm":text,
         "sr":1,
         "ks":{
@@ -43,8 +46,7 @@ def generate_json(text: str, font_color=(0,0,0), font_name="NotoColorEmoji", siz
     }
 
     out = BytesIO()
-    json_bytes = json.dumps(lottie, indent=2).encode("utf-8")
-    out.write(json_bytes)
+    out.write(json.dumps(lottie, indent=2).encode("utf-8"))
     out.seek(0)
     out.name = "emoji.json"
     return out
@@ -76,10 +78,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def send_color_step(update, context):
     keyboard = [
         [InlineKeyboardButton("⬛ Hitam", callback_data="color_0_0_0"),
-         InlineKeyboardButton("⬜ Putih", callback_data="color_1_1_1")],
-        [InlineKeyboardButton("🔴 Merah", callback_data="color_1_0_0"),
-         InlineKeyboardButton("🟢 Hijau", callback_data="color_0_1_0")],
-        [InlineKeyboardButton("🔵 Biru", callback_data="color_0_0_1")],
+         InlineKeyboardButton("⬜ Putih", callback_data="color_255_255_255")],
+        [InlineKeyboardButton("🔴 Merah", callback_data="color_255_0_0"),
+         InlineKeyboardButton("🟢 Hijau", callback_data="color_0_255_0")],
+        [InlineKeyboardButton("🔵 Biru", callback_data="color_0_0_255")],
         [InlineKeyboardButton("⬅️ Kembali", callback_data="back_text")]
     ]
     if isinstance(update, Update):
@@ -88,13 +90,18 @@ async def send_color_step(update, context):
         await update.edit_message_text("🎨 Pilih warna teks:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def send_font_step(query, context):
-    keyboard = [
-        [InlineKeyboardButton("NotoColorEmoji", callback_data="font_NotoColorEmoji"),
-         InlineKeyboardButton("Arial", callback_data="font_Arial")],
-        [InlineKeyboardButton("Comic Sans", callback_data="font_ComicSans"),
-         InlineKeyboardButton("Impact", callback_data="font_Impact")],
-        [InlineKeyboardButton("⬅️ Kembali", callback_data="back_color")]
-    ]
+    # otomatis ambil font dari assets/fonts
+    font_files = os.listdir("assets/fonts")
+    keyboard = []
+    row = []
+    for f in font_files:
+        row.append(InlineKeyboardButton(f.replace(".ttf",""), callback_data=f"font_{f}"))
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    keyboard.append([InlineKeyboardButton("⬅️ Kembali", callback_data="back_color")])
     await query.edit_message_text("🖋️ Pilih font:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def send_size_step(query, context):
@@ -113,15 +120,11 @@ async def send_animation_step(query, context):
          InlineKeyboardButton("Slide", callback_data="anim_slide")],
         [InlineKeyboardButton("⬅️ Kembali", callback_data="back_size")]
     ]
-    await query.edit_message_text("🎬 Pilih efek animasi:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.edit_message_text("🎬 Pilih animasi:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def send_create_step(query, context):
-    keyboard = [
-        [InlineKeyboardButton("✅ Buat Emoji JSON", callback_data="create_emoji")],
-        [InlineKeyboardButton("⬅️ Kembali", callback_data="back_animation")]
-    ]
-    text = context.user_data.get("emoji_text","")
-    await query.edit_message_text(f"📌 Semua opsi siap!\nTeks: `{text}`\nTekan ✅ untuk buat emoji JSON.", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard = [[InlineKeyboardButton("✅ Buat JSON", callback_data="create_json")]]
+    await query.edit_message_text("📌 Semua opsi siap! Tekan ✅ untuk generate JSON.", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # -------------------- CALLBACK HANDLER --------------------
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -130,72 +133,67 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     current = context.user_data.get("current_step","text")
 
-    # MENU
-    if data == "help":
-        keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="start")]]
-        await query.edit_message_text("ℹ️ Panduan wizard.", reply_markup=InlineKeyboardMarkup(keyboard))
+    # Help
+    if data=="help":
+        await query.edit_message_text("ℹ️ Wizard buat animasi text emoji JSON.", reply_markup=None)
         return
-    elif data == "start":
-        await start(update, context)
-        return
-
-    # TEXT
-    elif data in ["step_text","back_text"]:
+    elif data=="step_text":
         context.user_data["current_step"]="text"
         await query.edit_message_text("📤 Kirim teks/emoji:")
         return
 
-    # COLOR
-    elif data.startswith("color_") and current=="color":
-        r,g,b = map(float, data.split("_")[1:])
+    # Color
+    elif data.startswith("color_"):
+        r,g,b = map(int,data.split("_")[1:])
         context.user_data["font_color"] = (r,g,b)
         context.user_data["current_step"]="font"
         await send_font_step(query, context)
-    elif data=="back_color" and current=="font":
+        return
+    elif data=="back_text":
+        context.user_data["current_step"]="text"
+        await query.edit_message_text("📤 Kirim teks/emoji:")
+        return
+
+    # Font
+    elif data.startswith("font_") and current=="font":
+        font_file = data.split("_",1)[1]  # Ambil dari assets/fonts
+        context.user_data["font_name"] = f"assets/fonts/{font_file}"
+        context.user_data["current_step"]="size"
+        await send_size_step(query, context)
+    elif data=="back_color" and current=="size":
         context.user_data["current_step"]="color"
         await send_color_step(query, context)
 
-    # FONT
-    elif data.startswith("font_") and current=="font":
-        font_name = data.split("_")[1]
-        context.user_data["font_name"] = font_name
-        context.user_data["current_step"]="size"
-        await send_size_step(query, context)
-    elif data=="back_font" and current=="size":
-        context.user_data["current_step"]="font"
-        await send_font_step(query, context)
-
-    # SIZE
+    # Size
     elif data.startswith("size_") and current=="size":
         size = int(data.split("_")[1])
         context.user_data["size"] = size
         context.user_data["current_step"]="animation"
         await send_animation_step(query, context)
-    elif data=="back_size" and current=="animation":
-        context.user_data["current_step"]="size"
-        await send_size_step(query, context)
+    elif data=="back_font" and current=="animation":
+        context.user_data["current_step"]="font"
+        await send_font_step(query, context)
 
-    # ANIMATION
+    # Animation
     elif data.startswith("anim_") and current=="animation":
         anim_type = data.split("_")[1]
         context.user_data["animation_type"]=anim_type
         context.user_data["current_step"]="create"
         await send_create_step(query, context)
-    elif data=="back_animation" and current=="create":
-        context.user_data["current_step"]="animation"
-        await send_animation_step(query, context)
+    elif data=="back_size" and current=="create":
+        context.user_data["current_step"]="size"
+        await send_size_step(query, context)
 
-    # CREATE
-    elif data=="create_emoji" and current=="create":
+    # Create JSON
+    elif data=="create_json" and current=="create":
         text = context.user_data.get("emoji_text","")
         font_color = context.user_data.get("font_color",(0,0,0))
-        font_name = context.user_data.get("font_name","NotoColorEmoji")
+        font_name = context.user_data.get("font_name","assets/fonts/NotoColorEmoji.ttf")
         size = context.user_data.get("size",512)
         anim_type = context.user_data.get("animation_type","fade_in")
 
         json_file = generate_json(text, font_color, font_name, size, anim_type)
         await query.message.reply_document(document=InputFile(json_file, filename="emoji.json"))
-        await send_create_step(query, context)
 
 # -------------------- MAIN --------------------
 def main():
@@ -205,5 +203,5 @@ def main():
     app.add_handler(CallbackQueryHandler(button))
     app.run_polling()
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
