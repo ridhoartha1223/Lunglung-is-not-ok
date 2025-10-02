@@ -1,5 +1,4 @@
 import os
-import gzip
 import json
 from io import BytesIO
 from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
@@ -8,9 +7,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 TOKEN = os.getenv("BOT_TOKEN")
 
 # -------------------- UTILITIES --------------------
-def generate_tgs(text: str, font_color, font_name, size, animation_type="fade_in") -> BytesIO:
+def generate_json(text: str, font_color=(0,0,0), font_name="NotoColorEmoji", size=512, animation_type="fade_in") -> BytesIO:
     r,g,b = font_color
-    # Opacity keyframes
     o_anim = [{"t":0,"s":[0],"e":[100],"i":{"x":[0.667],"y":[1]},"o":{"x":[0.333],"y":[0]}},{"t":30}] if animation_type=="fade_in" else 100
     s_anim = [{"t":0,"s":[0,0,100],"e":[100,100,100],"i":{"x":[0.667]*3,"y":[1]*3},"o":{"x":[0.333]*3,"y":[0]*3}}] if animation_type=="scale" else [100,100,100]
 
@@ -45,20 +43,20 @@ def generate_tgs(text: str, font_color, font_name, size, animation_type="fade_in
     }
 
     out = BytesIO()
-    with gzip.GzipFile(fileobj=out, mode='w') as f:
-        f.write(json.dumps(lottie).encode('utf-8'))
+    json_bytes = json.dumps(lottie, indent=2).encode("utf-8")
+    out.write(json_bytes)
     out.seek(0)
-    out.name = "emoji.tgs"
+    out.name = "emoji.json"
     return out
 
 # -------------------- STEP FUNCTIONS --------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("🖌️ Buat Emoji", callback_data="step_text")],
+        [InlineKeyboardButton("🖌️ Buat Emoji JSON", callback_data="step_text")],
         [InlineKeyboardButton("ℹ️ Bantuan", callback_data="help")]
     ]
     await update.message.reply_text(
-        "✨ *Ultimate Animated Emoji Bot!* ✨\nBuat emoji custom step-by-step.",
+        "✨ *Animated Emoji JSON Wizard!* ✨\nBuat emoji step-by-step.",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -75,7 +73,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["current_step"] = "color"
     await send_color_step(update, context)
 
-# COLOR STEP
 async def send_color_step(update, context):
     keyboard = [
         [InlineKeyboardButton("⬛ Hitam", callback_data="color_0_0_0"),
@@ -90,7 +87,6 @@ async def send_color_step(update, context):
     else:
         await update.edit_message_text("🎨 Pilih warna teks:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# FONT STEP
 async def send_font_step(query, context):
     keyboard = [
         [InlineKeyboardButton("NotoColorEmoji", callback_data="font_NotoColorEmoji"),
@@ -101,7 +97,6 @@ async def send_font_step(query, context):
     ]
     await query.edit_message_text("🖋️ Pilih font:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# SIZE STEP
 async def send_size_step(query, context):
     keyboard = [
         [InlineKeyboardButton("256 px", callback_data="size_256"),
@@ -111,7 +106,6 @@ async def send_size_step(query, context):
     ]
     await query.edit_message_text("📐 Pilih ukuran canvas:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ANIMATION STEP
 async def send_animation_step(query, context):
     keyboard = [
         [InlineKeyboardButton("Fade In", callback_data="anim_fade_in"),
@@ -121,14 +115,13 @@ async def send_animation_step(query, context):
     ]
     await query.edit_message_text("🎬 Pilih efek animasi:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# CREATE STEP
 async def send_create_step(query, context):
     keyboard = [
-        [InlineKeyboardButton("✅ Buat Emoji Animasi", callback_data="create_emoji")],
+        [InlineKeyboardButton("✅ Buat Emoji JSON", callback_data="create_emoji")],
         [InlineKeyboardButton("⬅️ Kembali", callback_data="back_animation")]
     ]
     text = context.user_data.get("emoji_text","")
-    await query.edit_message_text(f"📌 Semua opsi siap!\nTeks: `{text}`\nTekan ✅ untuk buat emoji animasi.", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.edit_message_text(f"📌 Semua opsi siap!\nTeks: `{text}`\nTekan ✅ untuk buat emoji JSON.", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # -------------------- CALLBACK HANDLER --------------------
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -200,8 +193,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         size = context.user_data.get("size",512)
         anim_type = context.user_data.get("animation_type","fade_in")
 
-        tgs_file = generate_tgs(text, font_color, font_name, size, anim_type)
-        await query.message.reply_sticker(sticker=InputFile(tgs_file, filename="emoji.tgs"))
+        json_file = generate_json(text, font_color, font_name, size, anim_type)
+        await query.message.reply_document(document=InputFile(json_file, filename="emoji.json"))
         await send_create_step(query, context)
 
 # -------------------- MAIN --------------------
