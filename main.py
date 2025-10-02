@@ -9,55 +9,44 @@ TOKEN = os.getenv("BOT_TOKEN")
 
 # -------------------- UTILITIES --------------------
 def generate_tgs(text: str, font_color, font_name, size, animation_type="fade_in") -> BytesIO:
-    """
-    Generate a Lottie (.tgs) with transparent background
-    text: emoji/text
-    font_color: (r,g,b) 0-1
-    font_name: string (Telegram font, e.g., NotoColorEmoji)
-    size: canvas size in px
-    animation_type: fade_in / bounce / scale
-    """
     r,g,b = font_color
-    # Minimal text layer
+    # Opacity keyframes
     o_anim = [{"t":0,"s":[0],"e":[100],"i":{"x":[0.667],"y":[1]},"o":{"x":[0.333],"y":[0]}},{"t":30}] if animation_type=="fade_in" else 100
-    s_anim = [{"t":0,"s":[0,0,100],"e":[100,100,100],"i":{"x":[0.667,0.667,0.667],"y":[1,1,1]},"o":{"x":[0.333,0.333,0.333],"y":[0,0,0]}}] if animation_type=="scale" else [100,100,100]
+    s_anim = [{"t":0,"s":[0,0,100],"e":[100,100,100],"i":{"x":[0.667]*3,"y":[1]*3},"o":{"x":[0.333]*3,"y":[0]*3}}] if animation_type=="scale" else [100,100,100]
 
-    lottie_json = {
-        "v": "5.7.4",
-        "fr": 30,
-        "ip": 0,
-        "op": 60,
-        "w": size,
-        "h": size,
-        "nm": "emoji_animation",
-        "ddd": 0,
-        "assets": [],
-        "layers": [
-            {
-                "ddd": 0,
-                "ind": 1,
-                "ty": 5,
-                "nm": text,
-                "sr": 1,
-                "ks": {
-                    "o": {"a":1, "k": o_anim},
-                    "p": {"a":0, "k":[size/2, size/2,0]},
-                    "s": {"a":1, "k": s_anim},
-                    "r": {"a":0,"k":0}
-                },
-                "t": {
-                    "d": {"k":[{"s":{"sz":[size,size],"ps":[0,0],"s":int(size*0.5),
-                                    "f":font_name,"t":text,"j":2,"tr":0,"lh":int(size*0.5),"fc":[r,g,b]},
-                               "t":0}]}
-                },
-                "ao":0
-            }
-        ]
+    layer = {
+        "ddd":0,
+        "ind":1,
+        "ty":5,
+        "nm":text,
+        "sr":1,
+        "ks":{
+            "o":{"a":1,"k": o_anim},
+            "p":{"a":0,"k":[size/2,size/2,0]},
+            "s":{"a":1,"k": s_anim},
+            "r":{"a":0,"k":0}
+        },
+        "t":{"d":{"k":[{"s":{"sz":[size,size],"ps":[0,0],"s":int(size*0.5),
+                        "f":font_name,"t":text,"j":2,"tr":0,"lh":int(size*0.5),"fc":[r,g,b]},
+                        "t":0}]}}
+    }
+
+    lottie = {
+        "v":"5.7.4",
+        "fr":30,
+        "ip":0,
+        "op":60,
+        "w":size,
+        "h":size,
+        "nm":"emoji_animation",
+        "ddd":0,
+        "assets":[],
+        "layers":[layer]
     }
 
     out = BytesIO()
     with gzip.GzipFile(fileobj=out, mode='w') as f:
-        f.write(json.dumps(lottie_json).encode('utf-8'))
+        f.write(json.dumps(lottie).encode('utf-8'))
     out.seek(0)
     out.name = "emoji.tgs"
     return out
@@ -69,25 +58,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("ℹ️ Bantuan", callback_data="help")]
     ]
     await update.message.reply_text(
-        "✨ *Ultimate Animated Emoji Bot!* ✨\nBuat emoji custom step-by-step dengan animasi.",
+        "✨ *Ultimate Animated Emoji Bot!* ✨\nBuat emoji custom step-by-step.",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ---- TEXT STEP ----
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("current_step") != "text":
         await update.message.reply_text("❌ Tunggu, wizard masih berjalan.")
         return
     text = update.message.text.strip()
     if not text:
-        await update.message.reply_text("❌ Kirim teks atau emoji!")
+        await update.message.reply_text("❌ Kirim teks/emoji!")
         return
     context.user_data["emoji_text"] = text
     context.user_data["current_step"] = "color"
     await send_color_step(update, context)
 
-# ---- COLOR STEP ----
+# COLOR STEP
 async def send_color_step(update, context):
     keyboard = [
         [InlineKeyboardButton("⬛ Hitam", callback_data="color_0_0_0"),
@@ -102,7 +90,7 @@ async def send_color_step(update, context):
     else:
         await update.edit_message_text("🎨 Pilih warna teks:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ---- FONT STEP ----
+# FONT STEP
 async def send_font_step(query, context):
     keyboard = [
         [InlineKeyboardButton("NotoColorEmoji", callback_data="font_NotoColorEmoji"),
@@ -113,7 +101,7 @@ async def send_font_step(query, context):
     ]
     await query.edit_message_text("🖋️ Pilih font:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ---- SIZE STEP ----
+# SIZE STEP
 async def send_size_step(query, context):
     keyboard = [
         [InlineKeyboardButton("256 px", callback_data="size_256"),
@@ -123,17 +111,17 @@ async def send_size_step(query, context):
     ]
     await query.edit_message_text("📐 Pilih ukuran canvas:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ---- ANIMATION STEP ----
+# ANIMATION STEP
 async def send_animation_step(query, context):
     keyboard = [
         [InlineKeyboardButton("Fade In", callback_data="anim_fade_in"),
-         InlineKeyboardButton("Bounce", callback_data="anim_bounce"),
-         InlineKeyboardButton("Scale", callback_data="anim_scale")],
+         InlineKeyboardButton("Scale", callback_data="anim_scale"),
+         InlineKeyboardButton("Slide", callback_data="anim_slide")],
         [InlineKeyboardButton("⬅️ Kembali", callback_data="back_size")]
     ]
     await query.edit_message_text("🎬 Pilih efek animasi:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ---- CREATE STEP ----
+# CREATE STEP
 async def send_create_step(query, context):
     keyboard = [
         [InlineKeyboardButton("✅ Buat Emoji Animasi", callback_data="create_emoji")],
