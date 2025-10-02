@@ -1,66 +1,76 @@
 import json
 import asyncio
+from pathlib import Path
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from lottie.utils import script
+from aiogram.filters import CommandStart
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from lottie.parsers.tgs import parse_tgs
 from lottie.exporters.tgs import export_tgs
-from lottie.importers import import_json
+from lottie.utils.stripper import strip_text_layers
 
-TOKEN = "YOUR_BOT_TOKEN"  # ganti sama token kamu
-bot = Bot(token=TOKEN)
+BOT_TOKEN = "8257954018:AAG4mFUjBHJ6ZQTl5b5t6_wZgqeP38oWF6I"
+TEMPLATE_PATH = Path("template.json")
+
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ===== STEP 1: /start =====
-@dp.message(commands=["start"])
-async def cmd_start(message: types.Message):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✨ Buat Emoji", callback_data="buat_emoji")]
-    ])
-    await message.answer("Selamat datang di Emoji Generator Bot!\nKlik tombol di bawah untuk mulai:", reply_markup=kb)
+# --- STEP 1: START HANDLER ---
+@dp.message(CommandStart())
+async def start_cmd(message: types.Message):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🎨 Buat Emoji", callback_data="make_emoji")
+    await message.answer(
+        "👋 Halo! Aku bisa bikin emoji animasi Telegram Premium.\n"
+        "Klik tombol di bawah untuk mulai.",
+        reply_markup=kb.as_markup()
+    )
 
-# ===== STEP 2: user klik tombol =====
-@dp.callback_query(lambda c: c.data == "buat_emoji")
-async def process_callback(callback: types.CallbackQuery):
-    await callback.message.answer("Silakan kirim teks yang ingin dijadikan emoji:")
+# --- STEP 2: INLINE BUTTON HANDLER ---
+@dp.callback_query(lambda c: c.data == "make_emoji")
+async def ask_text(callback: types.CallbackQuery):
+    await callback.message.answer("✍️ Tulis teks yang ingin dijadikan emoji:")
     await callback.answer()
+    dp.message.register(receive_text, lambda m: True, flags={"expecting_text": True})
 
-# ===== STEP 3: user kirim teks =====
-@dp.message()
-async def handle_text(message: types.Message):
-    user_text = message.text.strip()
+# --- STEP 3: RECEIVE USER TEXT ---
+async def receive_text(message: types.Message):
+    text = message.text.strip()
+    await message.answer(f"🔄 Membuat emoji untuk teks: **{text}**")
 
-    # Baca template JSON
-    with open("template.json", "r", encoding="utf-8") as f:
-        data = json.load(f)
+    # load template json
+    data = json.loads(TEMPLATE_PATH.read_text())
 
-    # Ganti semua instance text 'rensian' dengan input user
+    # --- replace "rensian" with user text ---
     def replace_text(obj):
         if isinstance(obj, dict):
             for k, v in obj.items():
-                if isinstance(v, str) and "rensian" in v:
-                    obj[k] = v.replace("rensian", user_text)
+                if isinstance(v, str) and v == "rensian":
+                    obj[k] = text
                 else:
                     replace_text(v)
         elif isinstance(obj, list):
-            for i in v:
-                replace_text(i)
-
+            for v in obj:
+                replace_text(v)
     replace_text(data)
 
-    # Simpan JSON baru
-    with open("temp.json", "w", encoding="utf-8") as f:
-        json.dump(data, f)
+    # --- convert text to shapes ---
+    anim = parse_tgs(json.dumps(data).encode())
+    strip_text_layers(anim)  # penting: bikin text jadi vector shapes
 
-    # Convert JSON → TGS
-    animation = import_json("temp.json")
-    with open("output.tgs", "wb") as f:
-        export_tgs(animation, f)
+    # --- export ke TGS ---
+    out_path = Path(f"{text}.tgs")
+    with out_path.open("wb") as f:
+        export_tgs(anim, f, frame_rate=30, width=512, height=512)
 
-    # Kirim balik ke user
-    await message.answer_document(types.FSInputFile("output.tgs"), caption="✨ Ini preview emoji kamu!")
+    # kirim preview
+    await message.answer_document(types.FSInputFile(out_path), caption="✅ Emoji jadi!")
 
+    # TODO: setelah ini user bisa pilih warna/font/ukuran → update preview
+    dp.message.unregister(receive_text)
+
+# --- RUN ---
 async def main():
     await dp.start_polling(bot)
 
-if name == "__main__":
+if __name__ == "__main__":
     asyncio.run(main())
