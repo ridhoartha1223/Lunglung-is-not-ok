@@ -49,11 +49,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("current_step") != "text":
+        await update.message.reply_text("❌ Tunggu, wizard masih berjalan. Ikuti instruksi step-by-step.")
         return
+
     text = update.message.text.strip()
     if not text:
-        await update.message.reply_text("❌ Kirim teks atau emoji yang ingin dijadikan sticker!")
+        await update.message.reply_text("❌ Kirim teks atau emoji untuk dijadikan sticker!")
         return
+
+    # Simpan teks dan lanjut ke step warna
     context.user_data["emoji_text"] = text
     context.user_data["current_step"] = "color"
     await send_color_step(update, context)
@@ -116,42 +120,46 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["current_step"] = "text"
         await query.edit_message_text("📤 Silakan kirim teks/emoji untuk dijadikan sticker:")
         return
-
-    # ------------------- COLOR -------------------
-    elif data.startswith("color_"):
-        _, r, g, b = data.split("_")
-        context.user_data["bg_color"] = (int(r), int(g), int(b))
-        context.user_data["current_step"] = "font"
-        await send_font_step(query, context)
     elif data == "back_text":
         context.user_data["current_step"] = "text"
         await query.edit_message_text("📤 Silakan kirim teks/emoji untuk dijadikan sticker:")
         return
 
-    # ------------------- FONT -------------------
-    elif data.startswith("font_"):
-        font_name = data.split("_")[1]
-        context.user_data["font_name"] = font_name
-        context.user_data["current_step"] = "size"
-        await send_size_step(query, context)
-    elif data == "back_color":
+    # ------------------- COLOR -------------------
+    elif data.startswith("color_") and context.user_data.get("current_step")=="color":
+        r,g,b = map(int, data.split("_")[1:])
+        context.user_data["bg_color"] = (r,g,b)
+        context.user_data["current_step"] = "font"
+        await send_font_step(query, context)
+    elif data == "back_color" and context.user_data.get("current_step")=="font":
         context.user_data["current_step"] = "color"
         await send_color_step(query, context)
         return
 
-    # ------------------- SIZE -------------------
-    elif data.startswith("size_"):
-        size = int(data.split("_")[1])
-        context.user_data["size"] = size
-        context.user_data["current_step"] = "create"
-        await send_create_step(query, context)
-    elif data == "back_font":
+    # ------------------- FONT -------------------
+    elif data.startswith("font_") and context.user_data.get("current_step")=="font":
+        font_name = data.split("_")[1]
+        context.user_data["font_name"] = font_name
+        context.user_data["current_step"] = "size"
+        await send_size_step(query, context)
+    elif data == "back_font" and context.user_data.get("current_step")=="size":
         context.user_data["current_step"] = "font"
         await send_font_step(query, context)
         return
 
+    # ------------------- SIZE -------------------
+    elif data.startswith("size_") and context.user_data.get("current_step")=="size":
+        size = int(data.split("_")[1])
+        context.user_data["size"] = size
+        context.user_data["current_step"] = "create"
+        await send_create_step(query, context)
+    elif data == "back_size" and context.user_data.get("current_step")=="create":
+        context.user_data["current_step"] = "size"
+        await send_size_step(query, context)
+        return
+
     # ------------------- CREATE -------------------
-    elif data == "create_emoji":
+    elif data == "create_emoji" and context.user_data.get("current_step")=="create":
         text = context.user_data.get("emoji_text","")
         bg_color = context.user_data.get("bg_color",(255,223,0))
         font_color = (0,0,0)
@@ -162,7 +170,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tgs_file = convert_png_to_tgs(png_file)
         await query.message.reply_sticker(sticker=InputFile(tgs_file, filename="emoji.tgs"))
 
-        # kembali ke menu create step agar user bisa buat emoji lagi
+        # tetap di create step agar user bisa generate lagi
         await send_create_step(query, context)
 
 # -------------------- MAIN --------------------
