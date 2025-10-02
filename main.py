@@ -35,7 +35,7 @@ def convert_png_to_tgs(png_bytes: BytesIO) -> BytesIO:
     out.name = "emoji.tgs"
     return out
 
-# -------------------- STEP HANDLER --------------------
+# -------------------- STEP FUNCTIONS --------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🖌️ Buat Emoji", callback_data="step_text")],
@@ -57,12 +57,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Kirim teks atau emoji untuk dijadikan sticker!")
         return
 
-    # Simpan teks dan lanjut ke step warna
     context.user_data["emoji_text"] = text
     context.user_data["current_step"] = "color"
     await send_color_step(update, context)
 
-# -------------------- STEP FUNCTIONS --------------------
 async def send_color_step(update, context):
     keyboard = [
         [InlineKeyboardButton("🟡 Kuning", callback_data="color_255_223_0")],
@@ -70,7 +68,7 @@ async def send_color_step(update, context):
         [InlineKeyboardButton("🔵 Biru", callback_data="color_0_0_255")],
         [InlineKeyboardButton("⬅️ Kembali", callback_data="back_text")]
     ]
-    msg_text = f"🎨 Pilih warna background untuk teks:\n`{context.user_data.get('emoji_text','')}`"
+    msg_text = f"🎨 Pilih warna background:\n`{context.user_data.get('emoji_text','')}`"
     if isinstance(update, Update):
         await update.message.reply_text(msg_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
     else:
@@ -108,6 +106,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
+    # MENU
     if data == "help":
         help_text = "ℹ️ Panduan: Ikuti wizard step-by-step untuk membuat emoji custom."
         keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="start")]]
@@ -125,7 +124,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("📤 Silakan kirim teks/emoji untuk dijadikan sticker:")
         return
 
-    # ------------------- COLOR -------------------
+    # COLOR STEP
     elif data.startswith("color_") and context.user_data.get("current_step")=="color":
         r,g,b = map(int, data.split("_")[1:])
         context.user_data["bg_color"] = (r,g,b)
@@ -134,9 +133,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back_color" and context.user_data.get("current_step")=="font":
         context.user_data["current_step"] = "color"
         await send_color_step(query, context)
-        return
 
-    # ------------------- FONT -------------------
+    # FONT STEP
     elif data.startswith("font_") and context.user_data.get("current_step")=="font":
         font_name = data.split("_")[1]
         context.user_data["font_name"] = font_name
@@ -145,9 +143,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back_font" and context.user_data.get("current_step")=="size":
         context.user_data["current_step"] = "font"
         await send_font_step(query, context)
-        return
 
-    # ------------------- SIZE -------------------
+    # SIZE STEP
     elif data.startswith("size_") and context.user_data.get("current_step")=="size":
         size = int(data.split("_")[1])
         context.user_data["size"] = size
@@ -156,9 +153,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back_size" and context.user_data.get("current_step")=="create":
         context.user_data["current_step"] = "size"
         await send_size_step(query, context)
-        return
 
-    # ------------------- CREATE -------------------
+    # CREATE STEP
     elif data == "create_emoji" and context.user_data.get("current_step")=="create":
         text = context.user_data.get("emoji_text","")
         bg_color = context.user_data.get("bg_color",(255,223,0))
