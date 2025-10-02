@@ -1,75 +1,74 @@
 import io
-from PIL import Image, ImageDraw, ImageFont, ImageSequence
 import json
+from PIL import Image, ImageDraw, ImageFont
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.utils import executor
+import asyncio
 
 API_TOKEN = "YOUR_BOT_TOKEN"
 bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
 # User state
 user_data = {}
 
 # Options
 colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]
-fonts = ["Arial-Bold.ttf", "Verdana.ttf", "TimesNewRoman.ttf"]
+fonts = ["fonts/Arial-Bold.ttf", "fonts/Verdana.ttf", "fonts/TimesNewRoman.ttf"]
 animations = ["fade", "scale", "bounce", "slide", "rotate"]
 
-# Start
-@dp.message_handler(commands=['start'])
+# --- Handlers ---
+
+@dp.message(commands=["start"])
 async def start(message: types.Message):
     await message.reply("Halo! Kirim teks yang ingin dijadikan emoji animasi:")
 
-# Receive text
-@dp.message_handler(lambda message: message.from_user.id not in user_data)
+@dp.message()
 async def get_text(message: types.Message):
-    user_data[message.from_user.id] = {"text": message.text}
-    keyboard = InlineKeyboardMarkup(row_width=3)
-    keyboard.add(*[InlineKeyboardButton(text=c, callback_data=f"color|{c}") for c in colors])
-    await message.reply("Pilih warna teks:", reply_markup=keyboard)
+    if message.from_user.id not in user_data:
+        user_data[message.from_user.id] = {"text": message.text}
+        # Color selection inline
+        keyboard = InlineKeyboardMarkup(row_width=3)
+        keyboard.add(*[InlineKeyboardButton(text=c, callback_data=f"color|{c}") for c in colors])
+        await message.reply("Pilih warna teks:", reply_markup=keyboard)
 
-# Handle inline callbacks
-@dp.callback_query_handler(lambda c: True)
+@dp.callback_query()
 async def callback_handler(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
-    data = callback_query.data
+    data_cb = callback_query.data
 
     if user_id not in user_data:
         await callback_query.answer("Kirim teks dulu dengan /start")
         return
 
-    # Color selection
-    if data.startswith("color|"):
-        user_data[user_id]["color"] = data.split("|")[1]
+    if data_cb.startswith("color|"):
+        user_data[user_id]["color"] = data_cb.split("|")[1]
         keyboard = InlineKeyboardMarkup(row_width=2)
         keyboard.add(*[InlineKeyboardButton(text=f, callback_data=f"font|{f}") for f in fonts])
-        await callback_query.message.edit_text(f"Warna dipilih: {data.split('|')[1]}\nPilih font:", reply_markup=keyboard)
+        await callback_query.message.edit_text(f"Warna dipilih: {data_cb.split('|')[1]}\nPilih font:", reply_markup=keyboard)
 
-    # Font selection
-    elif data.startswith("font|"):
-        user_data[user_id]["font"] = data.split("|")[1]
-        await callback_query.message.edit_text(f"Font dipilih: {data.split('|')[1]}\nMasukkan ukuran teks (contoh: 64):")
+    elif data_cb.startswith("font|"):
+        user_data[user_id]["font"] = data_cb.split("|")[1]
+        await callback_query.message.edit_text(f"Font dipilih: {data_cb.split('|')[1]}\nMasukkan ukuran teks (contoh: 64):")
 
-    # Animation selection
-    elif data.startswith("anim|"):
-        user_data[user_id]["animation"] = data.split("|")[1]
+    elif data_cb.startswith("anim|"):
+        user_data[user_id]["animation"] = data_cb.split("|")[1]
         await generate_tgs(callback_query.message, user_id)
 
-# Receive size
-@dp.message_handler(lambda message: message.from_user.id in user_data and "size" not in user_data[message.from_user.id])
+@dp.message()
 async def get_size(message: types.Message):
-    try:
-        size = int(message.text)
-        user_data[message.from_user.id]["size"] = size
-        keyboard = InlineKeyboardMarkup(row_width=3)
-        keyboard.add(*[InlineKeyboardButton(text=a.capitalize(), callback_data=f"anim|{a}") for a in animations])
-        await message.reply("Pilih animasi teks:", reply_markup=keyboard)
-    except:
-        await message.reply("Ukuran tidak valid, masukkan angka.")
+    user_id = message.from_user.id
+    if user_id in user_data and "size" not in user_data[user_id]:
+        try:
+            size = int(message.text)
+            user_data[user_id]["size"] = size
+            keyboard = InlineKeyboardMarkup(row_width=3)
+            keyboard.add(*[InlineKeyboardButton(text=a.capitalize(), callback_data=f"anim|{a}") for a in animations])
+            await message.reply("Pilih animasi teks:", reply_markup=keyboard)
+        except:
+            await message.reply("Ukuran tidak valid, masukkan angka.")
 
-# Generate TGS with preview
+# --- Generate TGS ---
 async def generate_tgs(message, user_id):
     data = user_data[user_id]
     text = data["text"]
@@ -78,25 +77,24 @@ async def generate_tgs(message, user_id):
     size = data["size"]
     animation = data["animation"]
 
-    # Create simple preview GIF (for chat preview)
+    # --- Preview GIF ---
     frames = []
     for i in range(5):
         img = Image.new("RGBA", (256, 256), (0,0,0,0))
         draw = ImageDraw.Draw(img)
         font = ImageFont.truetype(font_path, size)
-        # Animation simulation
         x, y = 128, 128
         if animation == "fade":
-            alpha = int(255 * (i+1)/5)
+            alpha = int(255*(i+1)/5)
         elif animation == "scale":
             scale = 0.5 + 0.5*(i+1)/5
             font = ImageFont.truetype(font_path, int(size*scale))
             alpha = 255
         elif animation == "bounce":
-            y = 128 + int(20*(i%2*2-1))
+            y += (-1)**i * 20
             alpha = 255
         elif animation == "slide":
-            x = 128 + int(-50 + 25*i)
+            x += int(-50 + 25*i)
             alpha = 255
         elif animation == "rotate":
             img = img.rotate(i*15, expand=1)
@@ -109,7 +107,7 @@ async def generate_tgs(message, user_id):
     preview_bytes.seek(0)
     await message.reply_document(types.InputFile(preview_bytes, filename="preview.gif"), caption="Preview animasi")
 
-    # Generate TGS JSON (simplified)
+    # --- Generate TGS JSON ---
     tgs = {
         "v": "5.7.4",
         "fr": 30,
@@ -148,5 +146,13 @@ async def generate_tgs(message, user_id):
     await message.reply_document(types.InputFile(tgs_bytes, filename="emoji.tgs"), caption="🎉 TGS siap kirim ke @sikers!")
     del user_data[user_id]
 
+# --- Run Bot ---
+async def main():
+    try:
+        print("Bot is starting...")
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
+
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.run(main())
