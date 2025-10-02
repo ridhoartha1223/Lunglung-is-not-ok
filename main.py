@@ -50,7 +50,10 @@ async def handle_text(message: types.Message):
 
         # Generate preview with default color/font
         tgs_file = generate_tgs(text, color="#FFFFFF", font="Arial")
-        await message.answer_document(types.InputFile(tgs_file), caption="Preview of your emoji text")
+        await message.answer_document(
+            types.InputFile(path=tgs_file),
+            caption="Preview of your emoji text"
+        )
 
         # Ask color
         keyboard = InlineKeyboardMarkup(
@@ -79,7 +82,10 @@ async def choose_color(callback: types.CallbackQuery):
         color=color,
         font="Arial"
     )
-    await callback.message.answer_document(types.InputFile(tgs_file), caption="Preview with chosen color")
+    await callback.message.answer_document(
+        types.InputFile(path=tgs_file),
+        caption="Preview with chosen color"
+    )
 
     # Ask font
     keyboard = InlineKeyboardMarkup(
@@ -109,7 +115,10 @@ async def choose_font(callback: types.CallbackQuery):
         color=state["data"].get("color", "#FFFFFF"),
         font=font
     )
-    await callback.message.answer_document(types.InputFile(tgs_file), caption="Here is your final emoji .tgs!")
+    await callback.message.answer_document(
+        types.InputFile(path=tgs_file),
+        caption="Here is your final emoji .tgs!"
+    )
     await callback.answer()
 
 # --- Function to generate .tgs ---
