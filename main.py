@@ -2,17 +2,21 @@ import os
 import io
 import json
 from PIL import Image, ImageDraw, ImageFont
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, Router
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import asyncio
 
 # Ambil token dari environment variable
 API_TOKEN = os.getenv("API_TOKEN")
 if not API_TOKEN:
-    raise ValueError("Error: Environment variable 'API_TOKEN' belum diset!")
+    raise ValueError("Environment variable 'API_TOKEN' belum diset!")
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
+
+# --- Router ---
+router = Router()
 
 # --- User state ---
 user_data = {}
@@ -23,45 +27,22 @@ fonts = ["fonts/Arial-Bold.ttf", "fonts/Verdana.ttf", "fonts/TimesNewRoman.ttf"]
 animations = ["fade", "scale", "bounce", "slide", "rotate"]
 
 # --- Handlers ---
-@dp.message(commands=["start"])
-async def start(message: types.Message):
+
+# Start command
+@router.message(Command("start"))
+async def start_handler(message: types.Message):
     await message.reply("Halo! Kirim teks yang ingin dijadikan emoji animasi:")
 
-@dp.message()
-async def get_text(message: types.Message):
-    if message.from_user.id not in user_data:
-        user_data[message.from_user.id] = {"text": message.text}
+# Receive text
+@router.message()
+async def handle_text(message: types.Message):
+    user_id = message.from_user.id
+    if user_id not in user_data:
+        user_data[user_id] = {"text": message.text}
         keyboard = InlineKeyboardMarkup(row_width=3)
         keyboard.add(*[InlineKeyboardButton(text=c, callback_data=f"color|{c}") for c in colors])
         await message.reply("Pilih warna teks:", reply_markup=keyboard)
-
-@dp.callback_query()
-async def callback_handler(callback_query: types.CallbackQuery):
-    user_id = callback_query.from_user.id
-    data_cb = callback_query.data
-
-    if user_id not in user_data:
-        await callback_query.answer("Kirim teks dulu dengan /start")
-        return
-
-    if data_cb.startswith("color|"):
-        user_data[user_id]["color"] = data_cb.split("|")[1]
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(*[InlineKeyboardButton(text=f, callback_data=f"font|{f}") for f in fonts])
-        await callback_query.message.edit_text(f"Warna dipilih: {data_cb.split('|')[1]}\nPilih font:", reply_markup=keyboard)
-
-    elif data_cb.startswith("font|"):
-        user_data[user_id]["font"] = data_cb.split("|")[1]
-        await callback_query.message.edit_text(f"Font dipilih: {data_cb.split('|')[1]}\nMasukkan ukuran teks (misal: 64):")
-
-    elif data_cb.startswith("anim|"):
-        user_data[user_id]["animation"] = data_cb.split("|")[1]
-        await generate_tgs(callback_query.message, user_id)
-
-@dp.message()
-async def get_size(message: types.Message):
-    user_id = message.from_user.id
-    if user_id in user_data and "size" not in user_data[user_id]:
+    elif "size" not in user_data[user_id]:
         try:
             size = int(message.text)
             user_data[user_id]["size"] = size
@@ -70,6 +51,30 @@ async def get_size(message: types.Message):
             await message.reply("Pilih animasi teks:", reply_markup=keyboard)
         except:
             await message.reply("Ukuran tidak valid, masukkan angka.")
+
+# Callback query (inline buttons)
+@router.callback_query()
+async def handle_callback(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    data_cb = callback.data
+
+    if user_id not in user_data:
+        await callback.answer("Kirim teks dulu dengan /start")
+        return
+
+    if data_cb.startswith("color|"):
+        user_data[user_id]["color"] = data_cb.split("|")[1]
+        keyboard = InlineKeyboardMarkup(row_width=2)
+        keyboard.add(*[InlineKeyboardButton(text=f, callback_data=f"font|{f}") for f in fonts])
+        await callback.message.edit_text(f"Warna dipilih: {data_cb.split('|')[1]}\nPilih font:", reply_markup=keyboard)
+
+    elif data_cb.startswith("font|"):
+        user_data[user_id]["font"] = data_cb.split("|")[1]
+        await callback.message.edit_text(f"Font dipilih: {data_cb.split('|')[1]}\nMasukkan ukuran teks (misal: 64):")
+
+    elif data_cb.startswith("anim|"):
+        user_data[user_id]["animation"] = data_cb.split("|")[1]
+        await generate_tgs(callback.message, user_id)
 
 # --- Generate TGS ---
 async def generate_tgs(message, user_id):
@@ -145,7 +150,10 @@ async def generate_tgs(message, user_id):
     await message.reply_document(types.InputFile(tgs_bytes, filename="emoji.tgs"), caption="🎉 TGS siap kirim ke @sikers!")
     del user_data[user_id]
 
-# --- Run Bot ---
+# --- Register router ---
+dp.include_router(router)
+
+# --- Run bot ---
 async def main():
     try:
         print("Bot is starting...")
