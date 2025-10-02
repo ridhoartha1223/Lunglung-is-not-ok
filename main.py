@@ -1,5 +1,5 @@
 import telegram
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 import logging
 import os
@@ -8,8 +8,7 @@ import json
 import gzip
 
 # --- KONFIGURASI BOT ---
-# Ganti dengan token bot Anda. Token yang Anda berikan sudah dimasukkan di sini.
-TOKEN = "8257954018:AAG4mFUjBHJ6ZQTl5b5t6_wZgqeP38oWF6I"
+TOKEN = "ISI_TOKEN_BOT_KAMU_DISINI"
 
 # Aktifkan logging
 logging.basicConfig(
@@ -17,18 +16,18 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# Definisikan 'states' untuk ConversationHandler
+# Definisikan 'states'
 TEXT, COLOR, SIZE, FONT, WAITING_OPTIONS = range(5)
 
-# Data default untuk TGS (Sesuai Permintaan)
+# Data default untuk TGS
 TGS_CONFIG = {
     "width": 512,
     "height": 512,
-    "duration": 3,   # Durasi 3 detik
-    "frame_rate": 30 # Frame rate 30 FPS
+    "duration": 3,
+    "frame_rate": 30
 }
 
-# Data Pilihan Kustomisasi (Contoh)
+# Pilihan warna & font
 COLORS = {
     "Merah": "#FF0000",
     "Biru": "#0000FF",
@@ -44,17 +43,10 @@ FONTS = {
     "Impact": "impact.ttf"
 }
 
-# --- FUNGSI INTI PEMBUATAN TGS (SIMULASI) ---
-
+# --- FUNGSI PEMBUATAN LOTTIE JSON ---
 def generate_lottie_json(text, color, size, font_path, config):
-    """
-    ***PERINGATAN: INI HANYA TEMPLAT SIMULASI LOTTIE JSON***
-    Anda harus mengimplementasikan logika rendering teks ke Lottie JSON 
-    yang valid dan sesuai TGS di bagian ini.
-    """
     logging.info(f"Generating Lottie for: {text}, Color: {color}, Size: {size}, Font: {font_path}")
     
-    # Struktur Lottie JSON SANGAT kompleks. Ini adalah dummy/simulasi minimal.
     lottie_json = {
         "v": "5.5.2",
         "fr": config["frame_rate"],
@@ -65,7 +57,7 @@ def generate_lottie_json(text, color, size, font_path, config):
         "assets": [],
         "layers": [
             {
-                "ty": 5, # Teks Layer
+                "ty": 5,  # Text Layer
                 "t": {
                     "d": {
                         "k": [
@@ -73,12 +65,17 @@ def generate_lottie_json(text, color, size, font_path, config):
                                 "s": {
                                     "t": text,
                                     "s": size,
-                                    "f": font_path.split('.')[0], 
+                                    "f": font_path.split('.')[0],
+                                    # warna + alpha supaya tidak transparan
                                     "fc": [
                                         int(color[1:3], 16) / 255.0,
                                         int(color[3:5], 16) / 255.0,
-                                        int(color[5:7], 16) / 255.0
-                                    ]
+                                        int(color[5:7], 16) / 255.0,
+                                        1.0
+                                    ],
+                                    # Tambahin outline/stroke putih tipis
+                                    "sc": [1, 1, 1, 1],  # strokeColor RGBA
+                                    "sw": 2             # strokeWidth
                                 }
                             }
                         ]
@@ -87,75 +84,56 @@ def generate_lottie_json(text, color, size, font_path, config):
                 "nm": "Text Sticker"
             }
         ],
-        "meta": {"tgs": 1} # Penanda TGS
+        "meta": {"tgs": 1}
     }
     
-    # Konversi ke string JSON dan kompresi GZIP
     json_string = json.dumps(lottie_json)
     tgs_bytes = gzip.compress(json_string.encode('utf-8'))
     
     return io.BytesIO(tgs_bytes)
 
 # --- HANDLER BOT ---
-
-# Handler Inline (Bot Welcome) - TIDAK MASUK DALAM CONVERSATIONHANDLER
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Mengirim pesan selamat datang dengan tombol inline."""
-    keyboard = [
-        [
-            InlineKeyboardButton("✨ Mulai Buat Emoji TGS ✨", callback_data='start_creation')
-        ]
-    ]
+    keyboard = [[InlineKeyboardButton("✨ Mulai Buat Emoji TGS ✨", callback_data='start_creation')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
         'Halo! Saya adalah Bot Pembuat Emoji TGS. Klik tombol di bawah untuk memulai.',
         reply_markup=reply_markup
     )
-    # PENTING: return 0 atau None. Fungsi ini TIDAK memulai ConversationHandler
 
-# Handler Callback Query untuk memulai konversasi
 async def handle_callback_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Menangani klik tombol 'start_creation' dan memulai proses konversi."""
     query = update.callback_query
     await query.answer() 
     
-    # Mengatur data pengguna default
     context.user_data['tgs_data'] = {
         'text': None,
         'color': COLORS['Hitam'], 
-        'size': 100,             
+        'size': 100,
         'font': FONTS['Arial'],  
         'font_name': 'Arial'
     }
     
-    # Meminta teks dari pengguna
     await query.edit_message_text(
-        'Silakan kirimkan **TEKS** yang ingin Anda jadikan emoji TGS. (Contoh: WAHH!)\n\n*(Maksimal 20 Karakter untuk hasil terbaik)*',
+        'Silakan kirimkan **TEKS** yang ingin Anda jadikan emoji TGS.\n\n*(Maksimal 20 Karakter)*',
         parse_mode='Markdown'
     )
-    return TEXT # Memulai ConversationHandler ke state TEXT
+    return TEXT
 
-# Langkah 1: Menerima Teks
 async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Menerima teks dari pengguna dan menyimpan state."""
     text = update.message.text
     context.user_data['tgs_data']['text'] = text
     
     await update.message.reply_text(f'Teks diatur: **{text}**.', parse_mode='Markdown')
     return await preview_and_options(update, context)
 
-# Langkah Lanjutan: Tampilkan Preview dan Pilihan Opsi
 async def preview_and_options(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Membuat preview TGS dan menampilkan pilihan kustomisasi."""
     data = context.user_data.get('tgs_data')
-    
     if not data or not data.get('text'):
-        await update.effective_message.reply_text("Teks belum diatur. Silakan kirimkan teks terlebih dahulu.")
+        await update.effective_message.reply_text("Teks belum diatur.")
         return TEXT
         
     try:
-        # 1. GENERATE TGS (Simulasi)
         tgs_file = generate_lottie_json(
             text=data['text'],
             color=data['color'],
@@ -165,7 +143,6 @@ async def preview_and_options(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         tgs_file.seek(0)
         
-        # 2. SIAPKAN CAPTION DAN OPSI KUSTOMISASI
         color_name = next(k for k, v in COLORS.items() if v == data['color'])
         caption = (
             "**PREVIEW EMOJI TGS ANDA**\n\n"
@@ -180,39 +157,25 @@ async def preview_and_options(update: Update, context: ContextTypes.DEFAULT_TYPE
             [InlineKeyboardButton("🎨 Pilih Warna", callback_data='choose_color'),
              InlineKeyboardButton("📏 Pilih Ukuran", callback_data='choose_size')],
             [InlineKeyboardButton("🔠 Pilih Font", callback_data='choose_font')],
-            [InlineKeyboardButton("✅ Selesai (Tambahkan ke Set Stiker)", callback_data='finish')]
+            [InlineKeyboardButton("✅ Selesai", callback_data='finish')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # 3. KIRIM STICKER (TIDAK ADA CAPTION)
-        await update.effective_message.reply_sticker(
-            sticker=tgs_file
-        )
+        await update.effective_message.reply_sticker(sticker=tgs_file)
+        await update.effective_message.reply_text(caption, reply_markup=reply_markup, parse_mode='Markdown')
         
-        # 4. KIRIM PESAN TEKS DENGAN OPSI KUSTOMISASI
-        await update.effective_message.reply_text(
-            text=caption,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-        
-        return WAITING_OPTIONS # Berpindah ke state menunggu pilihan opsi
+        return WAITING_OPTIONS
 
     except Exception as e:
         logging.error(f"Error creating TGS: {e}")
-        await update.effective_message.reply_text(
-            f"❌ Terjadi kesalahan saat membuat TGS: {e}. Pastikan teks valid."
-        )
-        return TEXT # Kembali meminta teks
+        await update.effective_message.reply_text(f"❌ Terjadi kesalahan: {e}")
+        return TEXT
 
-# Handler Umum untuk Pilihan Opsi (Warna, Ukuran, Font)
 async def handle_options_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Menangani klik tombol opsi (Warna, Ukuran, Font)."""
     query = update.callback_query
     await query.answer() 
     
     data = query.data
-    
     if data == 'choose_color':
         return await choose_color_step(update, context)
     elif data == 'choose_size':
@@ -220,18 +183,13 @@ async def handle_options_selection(update: Update, context: ContextTypes.DEFAULT
     elif data == 'choose_font':
         return await choose_font_step(update, context)
     elif data == 'finish':
-        # Mengedit pesan tombol opsi sebelum mengakhirinya
         await query.edit_message_reply_markup(reply_markup=None) 
         return await finish(update, context)
-    
     return WAITING_OPTIONS
 
-# Handler Detail Pilihan Warna, Ukuran, Font (Callback Setelah Pilihan)
 async def handle_setting_change(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Menangani set Warna/Ukuran/Font dan kembali ke preview."""
     query = update.callback_query
     await query.answer()
-
     data = query.data.split('_', 2)
     action = data[1]
     value = data[2]
@@ -249,145 +207,80 @@ async def handle_setting_change(update: Update, context: ContextTypes.DEFAULT_TY
         
     return await preview_and_options(update, context)
 
-# --- Langkah-Langkah Pilihan ---
-
 async def choose_color_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Tampilkan opsi pilihan warna."""
-    keyboard = []
-    for name, code in COLORS.items():
-        keyboard.append([InlineKeyboardButton(f"🎨 {name} ({code})", callback_data=f'set_color_{name}')])
-    
-    keyboard.append([InlineKeyboardButton("⬅️ Kembali ke Preview", callback_data='preview_back')])
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.callback_query.edit_message_text(
-        "Pilih salah satu warna:",
-        reply_markup=reply_markup
-    )
+    keyboard = [[InlineKeyboardButton(f"🎨 {name} ({code})", callback_data=f'set_color_{name}')] for name, code in COLORS.items()]
+    keyboard.append([InlineKeyboardButton("⬅️ Kembali", callback_data='preview_back')])
+    await update.callback_query.edit_message_text("Pilih salah satu warna:", reply_markup=InlineKeyboardMarkup(keyboard))
     return COLOR
 
 async def choose_size_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Tampilkan opsi pilihan ukuran."""
     sizes = [50, 80, 100, 120, 150]
-    keyboard = []
-    row = []
-    for size in sizes:
-        row.append(InlineKeyboardButton(f"📏 {size} px", callback_data=f'set_size_{size}'))
-        if len(row) == 3:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
-    
-    keyboard.append([InlineKeyboardButton("⬅️ Kembali ke Preview", callback_data='preview_back')])
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.callback_query.edit_message_text(
-        "Pilih ukuran teks:",
-        reply_markup=reply_markup
-    )
+    keyboard = [[InlineKeyboardButton(f"📏 {s}px", callback_data=f'set_size_{s}')] for s in sizes]
+    keyboard.append([InlineKeyboardButton("⬅️ Kembali", callback_data='preview_back')])
+    await update.callback_query.edit_message_text("Pilih ukuran:", reply_markup=InlineKeyboardMarkup(keyboard))
     return SIZE
 
 async def choose_font_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Tampilkan opsi pilihan font."""
-    keyboard = []
-    for name in FONTS.keys():
-        keyboard.append([InlineKeyboardButton(f"🔠 {name}", callback_data=f'set_font_{name}')])
-    
-    keyboard.append([InlineKeyboardButton("⬅️ Kembali ke Preview", callback_data='preview_back')])
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.callback_query.edit_message_text(
-        "Pilih jenis font:",
-        reply_markup=reply_markup
-    )
-    return FONT 
+    keyboard = [[InlineKeyboardButton(f"🔠 {name}", callback_data=f'set_font_{name}')] for name in FONTS.keys()]
+    keyboard.append([InlineKeyboardButton("⬅️ Kembali", callback_data='preview_back')])
+    await update.callback_query.edit_message_text("Pilih font:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return FONT
 
 async def back_to_preview(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Mengembalikan pengguna ke langkah preview setelah memilih opsi."""
     query = update.callback_query
     await query.answer()
-    
-    # Edit pesan opsi sebelumnya sebelum mengirim yang baru
     await query.edit_message_reply_markup(reply_markup=None)
-    
     return await preview_and_options(update, context)
 
-# Menangani Callback Finish (Selesai)
 async def finish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Mengakhiri konversasi dan memberikan instruksi terakhir."""
     query = update.callback_query
     await query.answer()
-    
     await query.edit_message_text(
         "✅ **Proses Selesai!**\n\n"
-        "Anda sudah melihat preview stiker TGS Anda. Silakan simpan file stiker animasi di atas "
-        "dan gunakan untuk membuat set stiker baru melalui @Stickers."
+        "Silakan gunakan stiker TGS di atas untuk membuat set stiker baru via @Stickers."
     )
-    
-    # Hapus data pengguna setelah selesai
     if 'tgs_data' in context.user_data:
         del context.user_data['tgs_data']
-        
     return ConversationHandler.END
 
-# Fallback untuk membatalkan
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Membatalkan dan mengakhiri konversasi."""
-    await update.message.reply_text('Pembuatan emoji dibatalkan. Silakan mulai lagi dengan /start.')
+    await update.message.reply_text('Pembuatan emoji dibatalkan. Gunakan /start untuk mulai lagi.')
     if 'tgs_data' in context.user_data:
         del context.user_data['tgs_data']
     return ConversationHandler.END
 
-
-# --- FUNGSI UTAMA (MAIN) ---
-
+# --- MAIN ---
 def main() -> None:
-    """Menjalankan bot."""
     application = Application.builder().token(TOKEN).build()
-
-    # 1. Tambahkan CommandHandler('start') terpisah
     application.add_handler(CommandHandler("start", start)) 
 
-    # 2. ConversationHandler (Hanya Callback Inline yang menjadi entry point)
     conv_handler = ConversationHandler(
-        entry_points=[
-            # Tombol inline 'start_creation' akan memulai konversasi
-            CallbackQueryHandler(handle_callback_entry, pattern='^start_creation$') 
-        ],
+        entry_points=[CallbackQueryHandler(handle_callback_entry, pattern='^start_creation$')],
         states={
             TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text)],
-            
             COLOR: [
                 CallbackQueryHandler(handle_setting_change, pattern='^set_color_'),
-                CallbackQueryHandler(back_to_preview, pattern='^preview_back$'),
+                CallbackQueryHandler(back_to_preview, pattern='^preview_back$')
             ],
             SIZE: [
                 CallbackQueryHandler(handle_setting_change, pattern='^set_size_'),
-                CallbackQueryHandler(back_to_preview, pattern='^preview_back$'),
+                CallbackQueryHandler(back_to_preview, pattern='^preview_back$')
             ],
             FONT: [
                 CallbackQueryHandler(handle_setting_change, pattern='^set_font_'),
-                CallbackQueryHandler(back_to_preview, pattern='^preview_back$'),
+                CallbackQueryHandler(back_to_preview, pattern='^preview_back$')
             ],
-            WAITING_OPTIONS: [ 
-                CallbackQueryHandler(handle_options_selection, pattern='^choose_(color|size|font)$'),
+            WAITING_OPTIONS: [
+                CallbackQueryHandler(handle_options_selection, pattern='^choose_(color|size|font|finish)$')
             ],
         },
-        fallbacks=[
-            CommandHandler('cancel', cancel)
-        ]
+        fallbacks=[CommandHandler('cancel', cancel)]
     )
 
     application.add_handler(conv_handler)
     
-    # Jalankan bot
     print("Bot berjalan...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     main()
-
