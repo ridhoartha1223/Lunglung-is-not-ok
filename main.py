@@ -9,7 +9,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 
 # -------------------- UTILITIES --------------------
 def generate_emoji_image(text: str, size=512, bg_color=(255,223,0), font_color=(0,0,0), font_name="arial.ttf") -> BytesIO:
-    img = Image.new("RGBA", (size,size), (0,0,0,0))
+    img = Image.new("RGBA", (size, size), (0,0,0,0))
     draw = ImageDraw.Draw(img)
     draw.ellipse([(0,0),(size-1,size-1)], fill=bg_color)
     try:
@@ -35,148 +35,135 @@ def convert_png_to_tgs(png_bytes: BytesIO) -> BytesIO:
     out.name = "emoji.tgs"
     return out
 
-# -------------------- HANDLERS --------------------
+# -------------------- STEP HANDLER --------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("🖌️ Buat Emoji", callback_data="create")],
+        [InlineKeyboardButton("🖌️ Buat Emoji", callback_data="step_text")],
         [InlineKeyboardButton("ℹ️ Bantuan", callback_data="help")]
     ]
     await update.message.reply_text(
-        "✨ *Ultimate Emoji Creator Bot!* ✨\n"
-        "Buat emoji custom dengan font, warna, size, dan langsung jadi sticker Telegram!",
+        "✨ *Ultimate Emoji Wizard Bot!* ✨\nBuat emoji custom step-by-step.",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("current_step") != "text":
+        return
     text = update.message.text.strip()
     if not text:
-        await update.message.reply_text("❌ Kirim teks atau emoji untuk dijadikan sticker!")
+        await update.message.reply_text("❌ Kirim teks atau emoji yang ingin dijadikan sticker!")
         return
-    lines = [line.strip() for line in text.split("\n") if line.strip()]
-    context.user_data["emoji_texts"] = lines
-    context.user_data["bg_color"] = (255,223,0)
-    context.user_data["font_color"] = (0,0,0)
-    context.user_data["size"] = 512
-    context.user_data["font_name"] = "arial.ttf"
-    await send_preview_menu(update, context)
+    context.user_data["emoji_text"] = text
+    context.user_data["current_step"] = "color"
+    await send_color_step(update, context)
 
-async def send_preview_menu(update, context):
-    lines = context.user_data.get("emoji_texts", ["Tidak Ada Teks"])
+# -------------------- STEP FUNCTIONS --------------------
+async def send_color_step(update, context):
     keyboard = [
-        [InlineKeyboardButton("🎨 Pilih Warna", callback_data="choose_color")],
-        [InlineKeyboardButton("🖋️ Pilih Font", callback_data="choose_font")],
-        [InlineKeyboardButton("📐 Pilih Ukuran", callback_data="choose_size")],
-        [InlineKeyboardButton("✅ Buat Emoji", callback_data="create_emoji")],
-        [InlineKeyboardButton("❌ Batal", callback_data="reset")]
+        [InlineKeyboardButton("🟡 Kuning", callback_data="color_255_223_0")],
+        [InlineKeyboardButton("🔴 Merah", callback_data="color_255_0_0")],
+        [InlineKeyboardButton("🔵 Biru", callback_data="color_0_0_255")],
+        [InlineKeyboardButton("⬅️ Kembali", callback_data="back_text")]
     ]
-    text_preview = f"📝 Teks: `{', '.join(lines)}`\nPilih opsi untuk menyesuaikan emoji:"
+    msg_text = f"🎨 Pilih warna background untuk teks:\n`{context.user_data.get('emoji_text','')}`"
     if isinstance(update, Update):
-        await update.message.reply_text(text_preview, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.message.reply_text(msg_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
     else:
-        await update.edit_message_text(text_preview, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.edit_message_text(msg_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
+async def send_font_step(query, context):
+    keyboard = [
+        [InlineKeyboardButton("Arial", callback_data="font_arial.ttf")],
+        [InlineKeyboardButton("Comic Sans", callback_data="font_comic.ttf")],
+        [InlineKeyboardButton("Impact", callback_data="font_impact.ttf")],
+        [InlineKeyboardButton("⬅️ Kembali", callback_data="back_color")]
+    ]
+    await query.edit_message_text("🖋️ Pilih font:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def send_size_step(query, context):
+    keyboard = [
+        [InlineKeyboardButton("256 px", callback_data="size_256")],
+        [InlineKeyboardButton("512 px", callback_data="size_512")],
+        [InlineKeyboardButton("1024 px", callback_data="size_1024")],
+        [InlineKeyboardButton("⬅️ Kembali", callback_data="back_font")]
+    ]
+    await query.edit_message_text("📐 Pilih ukuran emoji:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def send_create_step(query, context):
+    keyboard = [
+        [InlineKeyboardButton("✅ Buat Emoji", callback_data="create_emoji")],
+        [InlineKeyboardButton("⬅️ Kembali", callback_data="back_size")]
+    ]
+    text = context.user_data.get("emoji_text","")
+    await query.edit_message_text(f"📌 Semua opsi siap!\nTeks: `{text}`\nTekan ✅ untuk buat emoji.", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+# -------------------- CALLBACK HANDLER --------------------
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
 
     if data == "help":
-        help_text = (
-            "ℹ️ *Panduan Ultimate Emoji Creator*\n\n"
-            "1. Klik 🖌️ Buat Emoji\n"
-            "2. Kirim teks / emoji (multi line untuk multi sticker)\n"
-            "3. Pilih warna, font, size\n"
-            "4. Klik ✅ Buat Emoji → semua emoji dikirim sebagai sticker .tgs"
-        )
-        keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="main")]]
-        await query.edit_message_text(help_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        help_text = "ℹ️ Panduan: Ikuti wizard step-by-step untuk membuat emoji custom."
+        keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="start")]]
+        await query.edit_message_text(help_text, reply_markup=InlineKeyboardMarkup(keyboard))
         return
-    elif data == "main":
-        keyboard = [
-            [InlineKeyboardButton("🖌️ Buat Emoji", callback_data="create")],
-            [InlineKeyboardButton("ℹ️ Bantuan", callback_data="help")]
-        ]
-        await query.edit_message_text("👋 Kembali ke Menu Utama", reply_markup=InlineKeyboardMarkup(keyboard))
+    elif data == "start":
+        await start(update, context)
         return
-    elif data == "create":
-        await query.edit_message_text("📤 Silakan kirim teks yang ingin dijadikan sticker (multi line untuk multi sticker).")
+    elif data == "step_text":
+        context.user_data["current_step"] = "text"
+        await query.edit_message_text("📤 Silakan kirim teks/emoji untuk dijadikan sticker:")
         return
-    elif data == "reset":
-        context.user_data.clear()
-        await query.edit_message_text("✅ Semua data direset. Kirim teks baru untuk mulai lagi.")
-        return
-    elif data == "choose_color":
-        keyboard = [
-            [InlineKeyboardButton("🟡 Kuning", callback_data="color_255_223_0")],
-            [InlineKeyboardButton("🔴 Merah", callback_data="color_255_0_0")],
-            [InlineKeyboardButton("🔵 Biru", callback_data="color_0_0_255")],
-            [InlineKeyboardButton("🔙 Kembali", callback_data="back_customize")]
-        ]
-        await query.edit_message_text("🎨 Pilih warna background:", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
+
+    # ------------------- COLOR -------------------
     elif data.startswith("color_"):
         _, r, g, b = data.split("_")
         context.user_data["bg_color"] = (int(r), int(g), int(b))
-        await send_back_to_preview(query, context, f"✅ Warna diubah ke RGB({r},{g},{b})")
+        context.user_data["current_step"] = "font"
+        await send_font_step(query, context)
+    elif data == "back_text":
+        context.user_data["current_step"] = "text"
+        await query.edit_message_text("📤 Silakan kirim teks/emoji untuk dijadikan sticker:")
         return
-    elif data == "choose_size":
-        keyboard = [
-            [InlineKeyboardButton("256 px", callback_data="size_256")],
-            [InlineKeyboardButton("512 px", callback_data="size_512")],
-            [InlineKeyboardButton("1024 px", callback_data="size_1024")],
-            [InlineKeyboardButton("🔙 Kembali", callback_data="back_customize")]
-        ]
-        await query.edit_message_text("📐 Pilih ukuran emoji:", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-    elif data.startswith("size_"):
-        size = int(data.split("_")[1])
-        context.user_data["size"] = size
-        await send_back_to_preview(query, context, f"✅ Ukuran diubah menjadi {size} px")
-        return
-    elif data == "choose_font":
-        keyboard = [
-            [InlineKeyboardButton("Arial", callback_data="font_arial.ttf")],
-            [InlineKeyboardButton("Comic Sans", callback_data="font_comic.ttf")],
-            [InlineKeyboardButton("Impact", callback_data="font_impact.ttf")],
-            [InlineKeyboardButton("🔙 Kembali", callback_data="back_customize")]
-        ]
-        await query.edit_message_text("🖋️ Pilih font:", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
+
+    # ------------------- FONT -------------------
     elif data.startswith("font_"):
         font_name = data.split("_")[1]
         context.user_data["font_name"] = font_name
-        await send_back_to_preview(query, context, f"✅ Font diubah menjadi {font_name}")
+        context.user_data["current_step"] = "size"
+        await send_size_step(query, context)
+    elif data == "back_color":
+        context.user_data["current_step"] = "color"
+        await send_color_step(query, context)
         return
-    elif data == "back_customize":
-        await send_back_to_preview(query, context)
-        return
-    elif data == "create_emoji":
-        lines = context.user_data.get("emoji_texts", ["A"])
-        bg_color = context.user_data.get("bg_color", (255,223,0))
-        font_color = context.user_data.get("font_color", (0,0,0))
-        size = context.user_data.get("size", 512)
-        font_name = context.user_data.get("font_name", "arial.ttf")
-        for text in lines:
-            png_file = generate_emoji_image(text, size=size, bg_color=bg_color, font_color=font_color, font_name=font_name)
-            tgs_file = convert_png_to_tgs(png_file)
-            await query.message.reply_sticker(sticker=InputFile(tgs_file, filename=f"{text}.tgs"))
-        await send_back_to_preview(query, context, "✅ Semua emoji berhasil dibuat!")
 
-async def send_back_to_preview(query, context, msg_extra=""):
-    lines = context.user_data.get("emoji_texts", ["Tidak Ada Teks"])
-    keyboard = [
-        [InlineKeyboardButton("🎨 Pilih Warna", callback_data="choose_color")],
-        [InlineKeyboardButton("🖋️ Pilih Font", callback_data="choose_font")],
-        [InlineKeyboardButton("📐 Pilih Ukuran", callback_data="choose_size")],
-        [InlineKeyboardButton("✅ Buat Emoji", callback_data="create_emoji")],
-        [InlineKeyboardButton("❌ Batal", callback_data="reset")]
-    ]
-    await query.edit_message_text(
-        f"{msg_extra}\n📝 Teks: `{', '.join(lines)}`\nPilih opsi lain atau buat emoji:",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    # ------------------- SIZE -------------------
+    elif data.startswith("size_"):
+        size = int(data.split("_")[1])
+        context.user_data["size"] = size
+        context.user_data["current_step"] = "create"
+        await send_create_step(query, context)
+    elif data == "back_font":
+        context.user_data["current_step"] = "font"
+        await send_font_step(query, context)
+        return
+
+    # ------------------- CREATE -------------------
+    elif data == "create_emoji":
+        text = context.user_data.get("emoji_text","")
+        bg_color = context.user_data.get("bg_color",(255,223,0))
+        font_color = (0,0,0)
+        size = context.user_data.get("size",512)
+        font_name = context.user_data.get("font_name","arial.ttf")
+
+        png_file = generate_emoji_image(text, size=size, bg_color=bg_color, font_color=font_color, font_name=font_name)
+        tgs_file = convert_png_to_tgs(png_file)
+        await query.message.reply_sticker(sticker=InputFile(tgs_file, filename="emoji.tgs"))
+
+        # kembali ke menu create step agar user bisa buat emoji lagi
+        await send_create_step(query, context)
 
 # -------------------- MAIN --------------------
 def main():
