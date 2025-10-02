@@ -2,17 +2,15 @@ import os
 import json
 import gzip
 from io import BytesIO
-from PIL import ImageFont, ImageDraw
 from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-# -------------------- UTILITY: TEXT → SHAPE --------------------
+# -------------------- UTILITY --------------------
 def text_to_shape_placeholder(text, size=512):
     """
-    Placeholder: convert text to simple rectangle path.
-    For production, replace with vector paths from font/emoji.
+    Placeholder: simple rectangle path
     """
     half = size/2
     path = {
@@ -27,7 +25,6 @@ def generate_lottie_shape(text, font_color=(0,0,0), size=512, animation_type="fa
     r,g,b = [c/255 for c in font_color]
     shape_path = text_to_shape_placeholder(text, size=size)
 
-    # layer
     layer = {
         "ddd":0,
         "ind":1,
@@ -68,7 +65,11 @@ def generate_tgs(lottie_json):
 # -------------------- WIZARD --------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("🖌️ Buat Emoji TGS", callback_data="step_text")]]
-    await update.message.reply_text("✨ Wizard Animated Emoji `.tgs` ✨", reply_markup=InlineKeyboardMarkup(keyboard))
+    text = "✨ Wizard Animated Emoji `.tgs` ✨"
+    if update.message:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["emoji_text"] = update.message.text.strip()
@@ -86,8 +87,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     current = context.user_data.get("current_step","text")
 
-    # Color
-    if data.startswith("color_"):
+    # Start kembali
+    if data=="step_text":
+        context.user_data["current_step"]="text"
+        await query.edit_message_text("📤 Kirim teks / emoji untuk dijadikan TGS:")
+        return
+
+    # Color step
+    if data.startswith("color_") and current=="color":
         r,g,b = map(int,data.split("_")[1:])
         context.user_data["font_color"] = (r,g,b)
         context.user_data["current_step"]="animation"
@@ -99,7 +106,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🎬 Pilih animasi:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
-    # Animation
+    # Animation step
     if data.startswith("anim_") and current=="animation":
         anim = data.split("_")[1]
         context.user_data["animation_type"] = anim
@@ -108,7 +115,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                       reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Generate TGS", callback_data="create_tgs")]]))
         return
 
-    # Create TGS
+    # Generate TGS
     if data=="create_tgs" and current=="create":
         text = context.user_data.get("emoji_text","")
         color = context.user_data.get("font_color",(0,0,0))
