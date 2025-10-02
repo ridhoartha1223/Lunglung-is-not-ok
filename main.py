@@ -6,7 +6,6 @@ from subprocess import run
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.filters.text import Text
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 API_TOKEN = os.environ.get("API_TOKEN")
@@ -28,7 +27,7 @@ async def cmd_start(message: types.Message):
     await message.answer("Welcome! Let's create your Telegram emoji.", reply_markup=keyboard)
 
 # --- Step 2: Inline button pressed ---
-@dp.callback_query(Text("start_emoji"))
+@dp.callback_query(lambda c: c.data == "start_emoji")
 async def start_emoji(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     user_states[user_id] = {"step": "await_text", "data": {}}
@@ -128,4 +127,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
