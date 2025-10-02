@@ -11,9 +11,19 @@ def generate_json(text: str, font_color=(0,0,0), font_name="assets/fonts/NotoCol
     # konversi warna 0-255 ke 0-1
     r,g,b = [c/255 for c in font_color]
 
-    # keyframe opacity untuk animasi
-    o_anim = [{"t":0,"s":[0],"e":[100],"i":{"x":[0.667],"y":[1]},"o":{"x":[0.333],"y":[0]}},{"t":30}] if animation_type=="fade_in" else 100
-    s_anim = [{"t":0,"s":[0,0,100],"e":[100,100,100],"i":{"x":[0.667]*3,"y":[1]*3},"o":{"x":[0.333]*3,"y":[0]*3}}] if animation_type=="scale" else [100,100,100]
+    # keyframe opacity dan scale untuk animasi 3 detik
+    if animation_type=="fade_in":
+        o_anim = [{"t":0,"s":[0],"e":[100],"i":{"x":[0.667],"y":[1]},"o":{"x":[0.333],"y":[0]}},{"t":90}]
+        s_anim = [{"t":0,"s":[100,100,100],"e":[100,100,100]}]  # tetap
+    elif animation_type=="scale":
+        o_anim = 100
+        s_anim = [{"t":0,"s":[0,0,100],"e":[100,100,100],"i":{"x":[0.667]*3,"y":[1]*3},"o":{"x":[0.333]*3,"y":[0]*3}}, {"t":90}]
+    elif animation_type=="slide":
+        o_anim = 100
+        s_anim = [{"t":0,"s":[100,100,100],"e":[100,100,100]}]
+    else:
+        o_anim = 100
+        s_anim = [{"t":0,"s":[100,100,100],"e":[100,100,100]}]
 
     layer = {
         "ddd":0,
@@ -36,7 +46,7 @@ def generate_json(text: str, font_color=(0,0,0), font_name="assets/fonts/NotoCol
         "v":"5.7.4",
         "fr":30,
         "ip":0,
-        "op":60,
+        "op":90,   # 3 detik
         "w":size,
         "h":size,
         "nm":"emoji_animation",
@@ -90,7 +100,6 @@ async def send_color_step(update, context):
         await update.edit_message_text("🎨 Pilih warna teks:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def send_font_step(query, context):
-    # otomatis ambil font dari assets/fonts
     font_files = os.listdir("assets/fonts")
     keyboard = []
     row = []
@@ -103,15 +112,6 @@ async def send_font_step(query, context):
         keyboard.append(row)
     keyboard.append([InlineKeyboardButton("⬅️ Kembali", callback_data="back_color")])
     await query.edit_message_text("🖋️ Pilih font:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def send_size_step(query, context):
-    keyboard = [
-        [InlineKeyboardButton("256 px", callback_data="size_256"),
-         InlineKeyboardButton("512 px", callback_data="size_512"),
-         InlineKeyboardButton("1024 px", callback_data="size_1024")],
-        [InlineKeyboardButton("⬅️ Kembali", callback_data="back_font")]
-    ]
-    await query.edit_message_text("📐 Pilih ukuran canvas:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def send_animation_step(query, context):
     keyboard = [
@@ -156,23 +156,13 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Font
     elif data.startswith("font_") and current=="font":
-        font_file = data.split("_",1)[1]  # Ambil dari assets/fonts
+        font_file = data.split("_",1)[1]
         context.user_data["font_name"] = f"assets/fonts/{font_file}"
-        context.user_data["current_step"]="size"
-        await send_size_step(query, context)
-    elif data=="back_color" and current=="size":
-        context.user_data["current_step"]="color"
-        await send_color_step(query, context)
-
-    # Size
-    elif data.startswith("size_") and current=="size":
-        size = int(data.split("_")[1])
-        context.user_data["size"] = size
         context.user_data["current_step"]="animation"
         await send_animation_step(query, context)
-    elif data=="back_font" and current=="animation":
-        context.user_data["current_step"]="font"
-        await send_font_step(query, context)
+    elif data=="back_color" and current=="animation":
+        context.user_data["current_step"]="color"
+        await send_color_step(query, context)
 
     # Animation
     elif data.startswith("anim_") and current=="animation":
@@ -181,15 +171,15 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["current_step"]="create"
         await send_create_step(query, context)
     elif data=="back_size" and current=="create":
-        context.user_data["current_step"]="size"
-        await send_size_step(query, context)
+        context.user_data["current_step"]="animation"
+        await send_animation_step(query, context)
 
     # Create JSON
     elif data=="create_json" and current=="create":
         text = context.user_data.get("emoji_text","")
         font_color = context.user_data.get("font_color",(0,0,0))
         font_name = context.user_data.get("font_name","assets/fonts/NotoColorEmoji.ttf")
-        size = context.user_data.get("size",512)
+        size = 512
         anim_type = context.user_data.get("animation_type","fade_in")
 
         json_file = generate_json(text, font_color, font_name, size, anim_type)
