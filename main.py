@@ -8,7 +8,7 @@ import json
 import gzip
 
 # --- KONFIGURASI BOT ---
-TOKEN = "ISI_TOKEN_BOT_KAMU_DISINI"
+TOKEN = "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"
 
 # Aktifkan logging
 logging.basicConfig(
@@ -284,3 +284,4 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+
