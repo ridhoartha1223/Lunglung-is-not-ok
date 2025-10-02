@@ -1,3 +1,4 @@
+import os
 import io
 import json
 from PIL import Image, ImageDraw, ImageFont
@@ -5,20 +6,23 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import asyncio
 
-API_TOKEN = "YOUR_BOT_TOKEN"
+# Ambil token dari environment variable
+API_TOKEN = os.getenv("API_TOKEN")
+if not API_TOKEN:
+    raise ValueError("Error: Environment variable 'API_TOKEN' belum diset!")
+
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# User state
+# --- User state ---
 user_data = {}
 
-# Options
+# --- Pilihan ---
 colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]
 fonts = ["fonts/Arial-Bold.ttf", "fonts/Verdana.ttf", "fonts/TimesNewRoman.ttf"]
 animations = ["fade", "scale", "bounce", "slide", "rotate"]
 
 # --- Handlers ---
-
 @dp.message(commands=["start"])
 async def start(message: types.Message):
     await message.reply("Halo! Kirim teks yang ingin dijadikan emoji animasi:")
@@ -27,7 +31,6 @@ async def start(message: types.Message):
 async def get_text(message: types.Message):
     if message.from_user.id not in user_data:
         user_data[message.from_user.id] = {"text": message.text}
-        # Color selection inline
         keyboard = InlineKeyboardMarkup(row_width=3)
         keyboard.add(*[InlineKeyboardButton(text=c, callback_data=f"color|{c}") for c in colors])
         await message.reply("Pilih warna teks:", reply_markup=keyboard)
@@ -49,7 +52,7 @@ async def callback_handler(callback_query: types.CallbackQuery):
 
     elif data_cb.startswith("font|"):
         user_data[user_id]["font"] = data_cb.split("|")[1]
-        await callback_query.message.edit_text(f"Font dipilih: {data_cb.split('|')[1]}\nMasukkan ukuran teks (contoh: 64):")
+        await callback_query.message.edit_text(f"Font dipilih: {data_cb.split('|')[1]}\nMasukkan ukuran teks (misal: 64):")
 
     elif data_cb.startswith("anim|"):
         user_data[user_id]["animation"] = data_cb.split("|")[1]
@@ -89,16 +92,12 @@ async def generate_tgs(message, user_id):
         elif animation == "scale":
             scale = 0.5 + 0.5*(i+1)/5
             font = ImageFont.truetype(font_path, int(size*scale))
-            alpha = 255
         elif animation == "bounce":
             y += (-1)**i * 20
-            alpha = 255
         elif animation == "slide":
             x += int(-50 + 25*i)
-            alpha = 255
         elif animation == "rotate":
             img = img.rotate(i*15, expand=1)
-            alpha = 255
         draw.text((x, y), text, font=font, fill=color)
         frames.append(img)
 
