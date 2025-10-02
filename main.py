@@ -24,7 +24,7 @@ user_states = {}
 async def cmd_start(message: types.Message):
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton("Create Emoji", callback_data="start_emoji")]
+            [InlineKeyboardButton(text="Create Emoji", callback_data="start_emoji")]
         ]
     )
     await message.answer("Welcome! Let's create your Telegram emoji.", reply_markup=keyboard)
@@ -55,9 +55,11 @@ async def handle_text(message: types.Message):
         # Ask color
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton("#FF0000", callback_data="color_#FF0000"),
-                 InlineKeyboardButton("#00FF00", callback_data="color_#00FF00"),
-                 InlineKeyboardButton("#0000FF", callback_data="color_#0000FF")]
+                [
+                    InlineKeyboardButton(text="#FF0000", callback_data="color_#FF0000"),
+                    InlineKeyboardButton(text="#00FF00", callback_data="color_#00FF00"),
+                    InlineKeyboardButton(text="#0000FF", callback_data="color_#0000FF"),
+                ]
             ]
         )
         await message.answer("Choose a color:", reply_markup=keyboard)
@@ -82,9 +84,11 @@ async def choose_color(callback: types.CallbackQuery):
     # Ask font
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton("Arial", callback_data="font_Arial"),
-             InlineKeyboardButton("Roboto", callback_data="font_Roboto"),
-             InlineKeyboardButton("ComicSans", callback_data="font_ComicSans")]
+            [
+                InlineKeyboardButton(text="Arial", callback_data="font_Arial"),
+                InlineKeyboardButton(text="Roboto", callback_data="font_Roboto"),
+                InlineKeyboardButton(text="ComicSans", callback_data="font_ComicSans"),
+            ]
         ]
     )
     await callback.message.answer("Choose font:", reply_markup=keyboard)
