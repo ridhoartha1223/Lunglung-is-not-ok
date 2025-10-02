@@ -1,125 +1,27 @@
 import os
-import io
+import gzip
 import json
-from PIL import Image, ImageDraw, ImageFont
-from aiogram import Bot, Dispatcher, types, Router
-from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-import asyncio
+from io import BytesIO
+from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-# Ambil token dari environment variable
-API_TOKEN = os.getenv("API_TOKEN")
-if not API_TOKEN:
-    raise ValueError("Environment variable 'API_TOKEN' belum diset!")
+TOKEN = os.getenv("BOT_TOKEN")
 
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher()
-
-# --- Router ---
-router = Router()
-
-# --- User state ---
-user_data = {}
-
-# --- Pilihan ---
-colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]
-fonts = ["fonts/Arial-Bold.ttf", "fonts/Verdana.ttf", "fonts/TimesNewRoman.ttf"]
-animations = ["fade", "scale", "bounce", "slide", "rotate"]
-
-# --- Handlers ---
-
-# Start command
-@router.message(Command("start"))
-async def start_handler(message: types.Message):
-    await message.reply("Halo! Kirim teks yang ingin dijadikan emoji animasi:")
-
-# Receive text
-@router.message()
-async def handle_text(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in user_data:
-        user_data[user_id] = {"text": message.text}
-        keyboard = InlineKeyboardMarkup(row_width=3)
-        keyboard.add(*[InlineKeyboardButton(text=c, callback_data=f"color|{c}") for c in colors])
-        await message.reply("Pilih warna teks:", reply_markup=keyboard)
-    elif "size" not in user_data[user_id]:
-        try:
-            size = int(message.text)
-            user_data[user_id]["size"] = size
-            keyboard = InlineKeyboardMarkup(row_width=3)
-            keyboard.add(*[InlineKeyboardButton(text=a.capitalize(), callback_data=f"anim|{a}") for a in animations])
-            await message.reply("Pilih animasi teks:", reply_markup=keyboard)
-        except:
-            await message.reply("Ukuran tidak valid, masukkan angka.")
-
-# Callback query (inline buttons)
-@router.callback_query()
-async def handle_callback(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    data_cb = callback.data
-
-    if user_id not in user_data:
-        await callback.answer("Kirim teks dulu dengan /start")
-        return
-
-    if data_cb.startswith("color|"):
-        user_data[user_id]["color"] = data_cb.split("|")[1]
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(*[InlineKeyboardButton(text=f, callback_data=f"font|{f}") for f in fonts])
-        await callback.message.edit_text(f"Warna dipilih: {data_cb.split('|')[1]}\nPilih font:", reply_markup=keyboard)
-
-    elif data_cb.startswith("font|"):
-        user_data[user_id]["font"] = data_cb.split("|")[1]
-        await callback.message.edit_text(f"Font dipilih: {data_cb.split('|')[1]}\nMasukkan ukuran teks (misal: 64):")
-
-    elif data_cb.startswith("anim|"):
-        user_data[user_id]["animation"] = data_cb.split("|")[1]
-        await generate_tgs(callback.message, user_id)
-
-# --- Generate TGS ---
-async def generate_tgs(message, user_id):
-    data = user_data[user_id]
-    text = data["text"]
-    color = data["color"]
-    font_path = data["font"]
-    size = data["size"]
-    animation = data["animation"]
-
-    # --- Preview GIF ---
-    frames = []
-    for i in range(5):
-        img = Image.new("RGBA", (256, 256), (0,0,0,0))
-        draw = ImageDraw.Draw(img)
-        font = ImageFont.truetype(font_path, size)
-        x, y = 128, 128
-        if animation == "fade":
-            alpha = int(255*(i+1)/5)
-        elif animation == "scale":
-            scale = 0.5 + 0.5*(i+1)/5
-            font = ImageFont.truetype(font_path, int(size*scale))
-        elif animation == "bounce":
-            y += (-1)**i * 20
-        elif animation == "slide":
-            x += int(-50 + 25*i)
-        elif animation == "rotate":
-            img = img.rotate(i*15, expand=1)
-        draw.text((x, y), text, font=font, fill=color)
-        frames.append(img)
-
-    preview_bytes = io.BytesIO()
-    frames[0].save(preview_bytes, format="GIF", save_all=True, append_images=frames[1:], duration=200, loop=0)
-    preview_bytes.seek(0)
-    await message.reply_document(types.InputFile(preview_bytes, filename="preview.gif"), caption="Preview animasi")
-
-    # --- Generate TGS JSON ---
-    tgs = {
+# -------------------- UTILITIES --------------------
+def generate_tgs(text: str, animation_type="fade_in", size=512) -> BytesIO:
+    """
+    Generate a simple Lottie JSON animation with text
+    Supported animation_type: fade_in, bounce, scale
+    """
+    # Simplified Lottie structure
+    lottie_json = {
         "v": "5.7.4",
         "fr": 30,
         "ip": 0,
         "op": 60,
-        "w": 256,
-        "h": 256,
-        "nm": "text_emoji",
+        "w": size,
+        "h": size,
+        "nm": "emoji_animation",
         "ddd": 0,
         "assets": [],
         "layers": [
@@ -130,36 +32,114 @@ async def generate_tgs(message, user_id):
                 "nm": text,
                 "sr": 1,
                 "ks": {
-                    "o": {"a":1,"k":[{"t":0,"s":[0],"e":[100]},{"t":30}]},
-                    "p":{"a":0,"k":[128,128,0]},
-                    "s":{"a":1,"k":[{"t":0,"s":[50,50,100],"e":[100,100,100]},{"t":30}]}
+                    "o": {"a":1, "k":[{"t":0,"s":[0],"e":[100],"i":{"x":[0.667],"y":[1]},"o":{"x":[0.333],"y":[0]}},{"t":30}] if animation_type=="fade_in" else 100},
+                    "p": {"a":0, "k":[size/2, size/2,0]},
+                    "s": {"a":1, "k":[
+                        {"t":0,"s":[0,0,100],"e":[100,100,100],"i":{"x":[0.667,0.667,0.667],"y":[1,1,1]},"o":{"x":[0.333,0.333,0.333],"y":[0,0,0]}}] if animation_type=="scale" else [100,100,100]},
+                    "r": {"a":0, "k":0}
                 },
-                "t": {
-                    "d":{"k":[{"s":{"sz":[256,256],"ps":[0,0],"s":size,"f":font_path,"t":text,"j":0,"tr":0,"lh":int(size*1.2),"fc":[int(color[1:3],16)/255,int(color[3:5],16)/255,int(color[5:7],16)/255]},"t":0}]},
-                    "p":{},
-                    "m":{"g":0,"a":0}
-                },
-                "ao":0
+                "t": {"d": {"k": [{"s":{"sz":[size,size],"ps":[0,0],"s":50,"f":"Arial","t":text,"j":2,"tr":0,"lh":60,"fc":[1,1,1]},"t":0}]}},
+                "ao": 0
             }
         ]
     }
 
-    tgs_bytes = io.BytesIO()
-    tgs_bytes.write(json.dumps(tgs).encode())
-    tgs_bytes.seek(0)
-    await message.reply_document(types.InputFile(tgs_bytes, filename="emoji.tgs"), caption="🎉 TGS siap kirim ke @sikers!")
-    del user_data[user_id]
+    out = BytesIO()
+    with gzip.GzipFile(fileobj=out, mode='w') as f:
+        f.write(json.dumps(lottie_json).encode('utf-8'))
+    out.seek(0)
+    out.name = "emoji.tgs"
+    return out
 
-# --- Register router ---
-dp.include_router(router)
+# -------------------- STEP FUNCTIONS --------------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🖌️ Buat Emoji", callback_data="step_text")],
+        [InlineKeyboardButton("ℹ️ Bantuan", callback_data="help")]
+    ]
+    await update.message.reply_text(
+        "✨ *Ultimate Animated Emoji Bot!* ✨\nBuat emoji custom step-by-step dengan animasi.",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
-# --- Run bot ---
-async def main():
-    try:
-        print("Bot is starting...")
-        await dp.start_polling(bot)
-    finally:
-        await bot.session.close()
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("current_step") != "text":
+        await update.message.reply_text("❌ Tunggu, wizard masih berjalan.")
+        return
+    text = update.message.text.strip()
+    if not text:
+        await update.message.reply_text("❌ Kirim teks atau emoji!")
+        return
+    context.user_data["emoji_text"] = text
+    context.user_data["current_step"] = "animation"
+    await send_animation_step(update.callback_query if update.callback_query else update, context)
+
+async def send_animation_step(query, context):
+    keyboard = [
+        [InlineKeyboardButton("Fade In", callback_data="anim_fade_in")],
+        [InlineKeyboardButton("Bounce", callback_data="anim_bounce")],
+        [InlineKeyboardButton("Scale", callback_data="anim_scale")],
+        [InlineKeyboardButton("⬅️ Kembali", callback_data="back_text")]
+    ]
+    text = f"🎨 Pilih efek animasi:\n`{context.user_data.get('emoji_text','')}`"
+    if isinstance(query, Update):
+        await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def send_create_step(query, context):
+    keyboard = [
+        [InlineKeyboardButton("✅ Buat Emoji Animasi", callback_data="create_emoji")],
+        [InlineKeyboardButton("⬅️ Kembali", callback_data="back_animation")]
+    ]
+    text = context.user_data.get("emoji_text","")
+    await query.edit_message_text(f"📌 Semua opsi siap!\nTeks: `{text}`\nTekan ✅ untuk buat emoji animasi.", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+# -------------------- CALLBACK HANDLER --------------------
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    # MENU
+    if data == "help":
+        keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="start")]]
+        await query.edit_message_text("ℹ️ Panduan: Ikuti wizard untuk membuat emoji animasi.", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+    elif data == "start":
+        await start(update, context)
+        return
+    elif data in ["step_text","back_text"]:
+        context.user_data["current_step"]="text"
+        await query.edit_message_text("📤 Kirim teks/emoji:")
+        return
+
+    # ANIMATION STEP
+    elif data.startswith("anim_") and context.user_data.get("current_step")=="animation":
+        anim_type = data.split("_")[1]
+        context.user_data["animation_type"] = anim_type
+        context.user_data["current_step"] = "create"
+        await send_create_step(query, context)
+    elif data == "back_animation" and context.user_data.get("current_step")=="create":
+        context.user_data["current_step"]="animation"
+        await send_animation_step(query, context)
+
+    # CREATE STEP
+    elif data == "create_emoji" and context.user_data.get("current_step")=="create":
+        text = context.user_data.get("emoji_text","")
+        anim_type = context.user_data.get("animation_type","fade_in")
+        tgs_file = generate_tgs(text, animation_type=anim_type)
+        await query.message.reply_sticker(sticker=InputFile(tgs_file, filename="emoji.tgs"))
+        await send_create_step(query, context)
+
+# -------------------- MAIN --------------------
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(CallbackQueryHandler(button))
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
