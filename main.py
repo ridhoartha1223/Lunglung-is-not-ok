@@ -9,7 +9,7 @@ import gzip
 
 # --- Konfigurasi dan Setup ---
 # Ganti dengan token bot Anda
-TOKEN = "GANTI_DENGAN_TOKEN_BOT_ANDA"
+TOKEN = "8257954018:AAG4mFUjBHJ6ZQTl5b5t6_wZgqeP38oWF6I"
 
 # Aktifkan logging
 logging.basicConfig(
@@ -379,3 +379,4 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+
