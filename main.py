@@ -16,8 +16,67 @@ dp = Dispatcher()
 with open("template.json", "r") as f:
     template_json = json.load(f)
 
+# Load shapes library
+with open("shapes_library.json", "r") as f:
+    shapes_library = json.load(f)
+
 # Temporary state per user
 user_states = {}
+
+# --- Function to convert hex to RGB ---
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    return [int(hex_color[i:i+2],16)/255 for i in (0,2,4)]
+
+# --- Function to replace text with shapes outlines ---
+def apply_shapes(text, data, color="#FFFFFF"):
+    """
+    Replaces text layers in Lottie JSON with corresponding shapes paths
+    from shapes_library.json.
+    """
+    layers = data.get("layers", [])
+    new_layers = []
+
+    for char in text:
+        if char in shapes_library:
+            # Copy the shape from library
+            char_shapes = copy.deepcopy(shapes_library[char])
+            # Apply color to each path
+            for shape in char_shapes:
+                if "c" in shape:  # fill color
+                    shape["c"] = hex_to_rgb(color)
+            new_layers.extend(char_shapes)
+        else:
+            print(f"[Warning] Character '{char}' not found in shapes library.")
+
+    # Remove existing text layers
+    data["layers"] = [layer for layer in layers if layer.get("ty") != 5]
+    # Add new shape layers
+    data["layers"].extend(new_layers)
+    return data
+
+# --- Function to generate .tgs ---
+def generate_tgs(text, color="#FFFFFF", font="Arial"):
+    data = copy.deepcopy(template_json)
+
+    # Replace text layers with shapes if available
+    data = apply_shapes(text, data, color=color)
+
+    # Still update any remaining text layers (optional fallback)
+    for layer in data.get("layers", []):
+        if layer.get("ty") == 5:  # text layer
+            layer["t"]["d"]["k"][0]["s"]["t"] = text
+            layer["t"]["d"]["k"][0]["s"]["fc"] = hex_to_rgb(color)
+            layer["t"]["d"]["k"][0]["s"]["f"] = font
+
+    tmp_json = f"tmp_{text}.json"
+    with open(tmp_json, "w") as f:
+        json.dump(data, f)
+
+    tgs_file = f"{text}.tgs"
+    run(["python3", "lottie_convert.py", tmp_json, tgs_file])
+
+    return tgs_file
 
 # --- Step 1: /start command ---
 @dp.message(Command("start"))
@@ -120,30 +179,6 @@ async def choose_font(callback: types.CallbackQuery):
         caption="Here is your final emoji .tgs!"
     )
     await callback.answer()
-
-# --- Function to generate .tgs ---
-def generate_tgs(text, color="#FFFFFF", font="Arial"):
-    data = copy.deepcopy(template_json)
-
-    # Update text layers
-    for layer in data.get("layers", []):
-        if layer.get("ty") == 5:  # text layer
-            layer["t"]["d"]["k"][0]["s"]["t"] = text
-            layer["t"]["d"]["k"][0]["s"]["fc"] = hex_to_rgb(color)
-            layer["t"]["d"]["k"][0]["s"]["f"] = font
-
-    tmp_json = f"tmp_{text}.json"
-    with open(tmp_json, "w") as f:
-        json.dump(data, f)
-
-    tgs_file = f"{text}.tgs"
-    run(["python3", "lottie_convert.py", tmp_json, tgs_file])
-
-    return tgs_file
-
-def hex_to_rgb(hex_color):
-    hex_color = hex_color.lstrip('#')
-    return [int(hex_color[i:i+2],16)/255 for i in (0,2,4)]
 
 # --- Run bot ---
 async def main():
