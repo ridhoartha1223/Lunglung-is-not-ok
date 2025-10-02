@@ -22,8 +22,11 @@ user_states = {}
 # --- Step 1: /start command ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton("Create Emoji", callback_data="start_emoji"))
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton("Create Emoji", callback_data="start_emoji")]
+        ]
+    )
     await message.answer("Welcome! Let's create your Telegram emoji.", reply_markup=keyboard)
 
 # --- Step 2: Inline button pressed ---
@@ -50,9 +53,13 @@ async def handle_text(message: types.Message):
         await message.answer_document(types.InputFile(tgs_file), caption="Preview of your emoji text")
 
         # Ask color
-        keyboard = InlineKeyboardMarkup(row_width=3)
-        for color in ["#FF0000", "#00FF00", "#0000FF"]:
-            keyboard.insert(InlineKeyboardButton(color, callback_data=f"color_{color}"))
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton("#FF0000", callback_data="color_#FF0000"),
+                 InlineKeyboardButton("#00FF00", callback_data="color_#00FF00"),
+                 InlineKeyboardButton("#0000FF", callback_data="color_#0000FF")]
+            ]
+        )
         await message.answer("Choose a color:", reply_markup=keyboard)
 
 # --- Step 4: Choose color ---
@@ -73,9 +80,13 @@ async def choose_color(callback: types.CallbackQuery):
     await callback.message.answer_document(types.InputFile(tgs_file), caption="Preview with chosen color")
 
     # Ask font
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    for font in ["Arial", "Roboto", "ComicSans"]:
-        keyboard.insert(InlineKeyboardButton(font, callback_data=f"font_{font}"))
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton("Arial", callback_data="font_Arial"),
+             InlineKeyboardButton("Roboto", callback_data="font_Roboto"),
+             InlineKeyboardButton("ComicSans", callback_data="font_ComicSans")]
+        ]
+    )
     await callback.message.answer("Choose font:", reply_markup=keyboard)
     await callback.answer()
 
