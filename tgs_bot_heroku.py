@@ -1,70 +1,185 @@
 import os
-from pyrogram import Client, filters
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from google.oauth2 import service_account
-import json
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+import gzip
+from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-# ===== Config =====
-BOT_TOKEN = "8319183574:AAHIi3SX218DNqS-owUcQ9Xyvc_D4Mk14Rw"
-DRIVE_FOLDER_ID = "1Z5q0Td8zWD4cFPO0upmWhBHAXW3eSacm"
-SERVICE_ACCOUNT_JSON = '{"installed":{"client_id":"1011650448521-sg3j5i3ec09htmdpdeg6lfphune6bgg9.apps.googleusercontent.com","project_id":"rensci-bot","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"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","redirect_uris":["http://localhost"]}}'
+TOKEN = os.getenv("BOT_TOKEN")
 
-# ===== Google Drive Setup =====
-SCOPES = ['https://www.googleapis.com/auth/drive.file']
-with open("service_account.json", "w") as f:
-    f.write(SERVICE_ACCOUNT_JSON)
+# -------------------- UTILITIES --------------------
+def generate_emoji_image(text: str, size=512, bg_color=(255,223,0), font_color=(0,0,0), font_name="arial.ttf") -> BytesIO:
+    img = Image.new("RGBA", (size,size), (0,0,0,0))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse([(0,0),(size-1,size-1)], fill=bg_color)
 
-credentials = service_account.Credentials.from_service_account_file(
-    "service_account.json", scopes=SCOPES)
-drive_service = build('drive', 'v3', credentials=credentials)
+    try:
+        font_size = int(size*0.5)
+        font = ImageFont.truetype(font_name, font_size)
+    except:
+        font = ImageFont.load_default()
 
-def upload_file_to_drive(local_path, folder_id):
-    filename = os.path.basename(local_path)
-    file_metadata = {'name': filename, 'parents': [folder_id]}
-    media = MediaFileUpload(local_path, mimetype='application/octet-stream')
-    file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-    return file.get('id')
+    text_width, text_height = draw.textsize(text, font=font)
+    text_x = (size - text_width)/2
+    text_y = (size - text_height)/2
+    draw.text((text_x,text_y), text, font=font, fill=font_color)
 
-# ===== Pyrogram Bot =====
-user_states = {}
-app = Client("bot_session", bot_token=BOT_TOKEN)
+    out = BytesIO()
+    out.name = "emoji.png"
+    img.save(out, "PNG")
+    out.seek(0)
+    return out
 
-@app.on_message(filters.command("start") & filters.private)
-def start(client, message):
-    message.reply("👋 Hai! Kirim file .tgs atau .json.\nBot akan otomatis upload ke Google Drive dengan nama asli file.")
+def convert_png_to_tgs(png_bytes: BytesIO) -> BytesIO:
+    out = BytesIO()
+    with gzip.GzipFile(fileobj=out, mode="w") as f:
+        f.write(png_bytes.getvalue())
+    out.seek(0)
+    out.name = "emoji.tgs"
+    return out
 
-@app.on_message(filters.document & filters.private)
-def receive_file(client, message):
-    user_id = str(message.from_user.id)
-    doc = message.document
-    if not doc.file_name.lower().endswith((".tgs", ".json")):
-        message.reply("❌ Tolong kirim .tgs atau .json saja.")
+# -------------------- HANDLERS --------------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🖌️ Buat Emoji", callback_data="create")],
+        [InlineKeyboardButton("ℹ️ Bantuan", callback_data="help")]
+    ]
+    await update.message.reply_text(
+        "✨ *Ultimate Emoji Creator Bot!* ✨\n"
+        "Buat emoji custom, pilih font, warna, size, dan langsung jadi sticker Telegram!",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if not text:
+        await update.message.reply_text("❌ Kirim teks atau emoji yang ingin dijadikan sticker!")
         return
 
-    temp_folder = f"{user_id}_temp"
-    os.makedirs(temp_folder, exist_ok=True)
-    file_path = os.path.join(temp_folder, doc.file_name)
-    message.download(file_path)
-    user_states.setdefault(user_id, {})["temp_files"] = user_states.get(user_id, {}).get("temp_files", []) + [file_path]
-    message.reply(f"✅ File '{doc.file_name}' diterima. Sekarang kirim nama pack untuk prefix (misal: MyPack).")
+    # Support multiple texts for multi-sticker pack
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    context.user_data["emoji_texts"] = lines
 
-@app.on_message(filters.text & filters.private)
-def set_pack_name(client, message):
-    user_id = str(message.from_user.id)
-    if user_id not in user_states or "temp_files" not in user_states[user_id]:
-        message.reply("⚠️ Kirim file dulu ya.")
+    # Default options
+    context.user_data["bg_color"] = (255,223,0)
+    context.user_data["font_color"] = (0,0,0)
+    context.user_data["size"] = 512
+    context.user_data["font_name"] = "arial.ttf"
+
+    keyboard = [
+        [InlineKeyboardButton("🎨 Pilih Warna", callback_data="choose_color")],
+        [InlineKeyboardButton("🖋️ Pilih Font", callback_data="choose_font")],
+        [InlineKeyboardButton("📐 Pilih Ukuran", callback_data="choose_size")],
+        [InlineKeyboardButton("✅ Buat Sticker Pack", callback_data="create_pack")],
+        [InlineKeyboardButton("❌ Batal", callback_data="reset")]
+    ]
+    await update.message.reply_text(
+        f"📝 Teks: `{', '.join(lines)}`\nPilih opsi untuk menyesuaikan emoji:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "help":
+        help_text = (
+            "ℹ️ *Panduan Ultimate Emoji Creator*\n\n"
+            "1. Klik 🖌️ Buat Emoji\n"
+            "2. Kirim teks/emoji (bisa multi line)\n"
+            "3. Pilih warna, font, size\n"
+            "4. Klik ✅ Buat Sticker Pack → semua emoji akan dikirim sebagai .tgs"
+        )
+        await query.edit_message_text(help_text, parse_mode="Markdown")
         return
+    elif data == "reset":
+        context.user_data.clear()
+        await query.edit_message_text("✅ Data direset, kirim teks baru untuk mulai lagi.")
+        return
+    elif data == "create":
+        await query.edit_message_text("📤 Silakan kirim teks yang ingin dijadikan sticker (multi line untuk multi sticker).")
+        return
+    elif data == "choose_color":
+        keyboard = [
+            [InlineKeyboardButton("🟡 Kuning", callback_data="color_255_223_0")],
+            [InlineKeyboardButton("🔴 Merah", callback_data="color_255_0_0")],
+            [InlineKeyboardButton("🔵 Biru", callback_data="color_0_0_255")],
+            [InlineKeyboardButton("🔙 Kembali", callback_data="back_customize")]
+        ]
+        await query.edit_message_text("🎨 Pilih warna background:", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+    elif data.startswith("color_"):
+        _, r, g, b = data.split("_")
+        context.user_data["bg_color"] = (int(r), int(g), int(b))
+        await query.edit_message_text(f"✅ Warna background diubah ke RGB({r},{g},{b})")
+        return
+    elif data == "choose_size":
+        keyboard = [
+            [InlineKeyboardButton("256 px", callback_data="size_256")],
+            [InlineKeyboardButton("512 px", callback_data="size_512")],
+            [InlineKeyboardButton("1024 px", callback_data="size_1024")],
+            [InlineKeyboardButton("🔙 Kembali", callback_data="back_customize")]
+        ]
+        await query.edit_message_text("📐 Pilih ukuran emoji:", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+    elif data.startswith("size_"):
+        size = int(data.split("_")[1])
+        context.user_data["size"] = size
+        await query.edit_message_text(f"✅ Ukuran emoji diubah menjadi {size} px")
+        return
+    elif data == "choose_font":
+        keyboard = [
+            [InlineKeyboardButton("Arial", callback_data="font_arial.ttf")],
+            [InlineKeyboardButton("Comic Sans", callback_data="font_comic.ttf")],
+            [InlineKeyboardButton("Impact", callback_data="font_impact.ttf")],
+            [InlineKeyboardButton("🔙 Kembali", callback_data="back_customize")]
+        ]
+        await query.edit_message_text("🖋️ Pilih font:", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+    elif data.startswith("font_"):
+        font_name = data.split("_")[1]
+        context.user_data["font_name"] = font_name
+        await query.edit_message_text(f"✅ Font diubah menjadi {font_name}")
+        return
+    elif data == "back_customize":
+        lines = context.user_data.get("emoji_texts", ["Tidak Ada Teks"])
+        keyboard = [
+            [InlineKeyboardButton("🎨 Pilih Warna", callback_data="choose_color")],
+            [InlineKeyboardButton("🖋️ Pilih Font", callback_data="choose_font")],
+            [InlineKeyboardButton("📐 Pilih Ukuran", callback_data="choose_size")],
+            [InlineKeyboardButton("✅ Buat Sticker Pack", callback_data="create_pack")],
+            [InlineKeyboardButton("❌ Batal", callback_data="reset")]
+        ]
+        await query.edit_message_text(
+            f"📝 Teks: `{', '.join(lines)}`\nPilih opsi untuk menyesuaikan emoji:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return
+    elif data == "create_pack":
+        lines = context.user_data.get("emoji_texts", ["A"])
+        bg_color = context.user_data.get("bg_color", (255,223,0))
+        font_color = context.user_data.get("font_color", (0,0,0))
+        size = context.user_data.get("size", 512)
+        font_name = context.user_data.get("font_name", "arial.ttf")
 
-    pack_name = message.text.strip()
-    temp_files = user_states[user_id]["temp_files"]
-    for f in temp_files:
-        original_name = os.path.basename(f)
-        new_name = f"{pack_name}_{original_name}"
-        upload_file_to_drive(f, DRIVE_FOLDER_ID)
-        os.remove(f)  # hapus file lokal
-    user_states[user_id]["temp_files"] = []
-    message.reply(f"✅ Semua file diupload ke Google Drive dengan prefix pack '{pack_name}'.")
+        for text in lines:
+            png_file = generate_emoji_image(text, size=size, bg_color=bg_color, font_color=font_color, font_name=font_name)
+            tgs_file = convert_png_to_tgs(png_file)
+            await query.message.reply_sticker(sticker=InputFile(tgs_file, filename=f"{text}.tgs"))
 
-print("Bot starting... (Railway / Local, bot-only, Google Drive upload)")
-app.run()
+        await query.edit_message_text("✅ Semua emoji berhasil dibuat dan dikirim sebagai sticker pack!")
+
+# -------------------- MAIN --------------------
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(CallbackQueryHandler(button))
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
